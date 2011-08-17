@@ -1,0 +1,7 @@
+dnsmasq.config
+dnsmasq.creator
+dnsmasq.creator.user
+dnsmasq.files
+dnsmasq.includes
+*.o
+src/dnsmasq
