@@ -110,6 +110,12 @@ struct myoption {
 #define LOPT_LOC_REBND 299
 #define LOPT_ADD_MAC   300
 #define LOPT_DNSSEC    301
+#define LOPT_RBL_SUFFIX         302
+#define LOPT_RBL_DEFAULT_ACTION 303
+#define LOPT_RBL_DENY_CATEGORY  304
+#define LOPT_RBL_WHITELIST      305
+#define LOPT_RBL_BLACKLIST      306
+#define LOPT_RBL_BLOCKED_TARGET 307
 
 #ifdef HAVE_GETOPT_LONG
 static const struct option opts[] =  
@@ -225,6 +231,12 @@ static const struct myoption opts[] =
     { "rebind-localhost-ok", 0, 0,  LOPT_LOC_REBND },
     { "add-mac", 0, 0, LOPT_ADD_MAC },
     { "proxy-dnssec", 0, 0, LOPT_DNSSEC },
+    { "rbl-suffix", 1, 0, LOPT_RBL_SUFFIX },
+    { "rbl-default-action", 1, 0, LOPT_RBL_DEFAULT_ACTION },
+    { "rbl-deny-category", 1, 0, LOPT_RBL_DENY_CATEGORY },
+    { "rbl-whitelist", 1, 0, LOPT_RBL_WHITELIST },
+    { "rbl-blacklist", 1, 0, LOPT_RBL_BLACKLIST },
+    { "rbl-blocked-target", 1, 0, LOPT_RBL_BLOCKED_TARGET },
     { NULL, 0, 0, 0 }
   };
 
@@ -347,6 +359,12 @@ static struct {
   { LOPT_TEST, 0, NULL, gettext_noop("Check configuration syntax."), NULL },
   { LOPT_ADD_MAC, OPT_ADD_MAC, NULL, gettext_noop("Add requestor's MAC address to forwarded DNS queries"), NULL },
   { LOPT_DNSSEC, OPT_DNSSEC, NULL, gettext_noop("Proxy DNSSEC validation results from upstream nameservers"), NULL },
+  { LOPT_RBL_SUFFIX, ARG_ONE, "<domain>", gettext_noop("Suffix to use for RBL categorisation queries."), NULL },
+  { LOPT_RBL_DEFAULT_ACTION, ARG_ONE, "permit|deny", gettext_noop("Default action if a domain is not categorised."), NULL },
+  { LOPT_RBL_DENY_CATEGORY, ARG_DUP, "<category>", gettext_noop("Deny lookups for sites in this category."), NULL },
+  { LOPT_RBL_WHITELIST, ARG_DUP, "<domain>", gettext_noop("Always allow lookups under this domain suffix."), NULL },
+  { LOPT_RBL_BLACKLIST, ARG_DUP, "<domain>", gettext_noop("Always deny lookups under this domain suffix."), NULL },
+  { LOPT_RBL_BLOCKED_TARGET, ARG_DUP, "<addr>|self", gettext_noop("The IP address(es) to return if a query was denied."), NULL },
   { 0, 0, NULL, NULL, NULL }
 }; 
 
@@ -2780,6 +2798,75 @@ static char *one_opt(int option, char *arg, char *gen_prob, int command_line)
 	new->weight = weight;
 	break;
       }
+
+    case LOPT_RBL_SUFFIX:
+      {
+	char *d;
+	if (!(d = canonicalise_opt(arg)))
+	  option = '?';
+	else
+	  daemon->rbl_suffix = d;
+	break;
+      }
+
+    case LOPT_RBL_DEFAULT_ACTION:
+      if (strcmp(arg, "permit") == 0)
+	daemon->rbl_default_action = RBL_ACTION_PERMIT;
+      else if (strcmp(arg, "deny") == 0)
+	daemon->rbl_default_action = RBL_ACTION_DENY;
+      else
+	{
+	  problem = _("invalid rbl-default-action value (expected 'permit' or 'deny')");
+	}
+      break;
+
+    case LOPT_RBL_DENY_CATEGORY:
+      {
+	struct rbl_category_list *new = opt_malloc(sizeof(struct rbl_category_list));
+	new->category_name = opt_string_alloc(arg);
+	new->action = RBL_ACTION_DENY;
+	new->next = daemon->rbl_categories;
+	daemon->rbl_categories = new;
+	break;
+      }
+
+    case LOPT_RBL_BLACKLIST:
+    case LOPT_RBL_WHITELIST:
+      {
+	char *d;
+	struct rbl_domain_list *new;
+
+	if (!(d = canonicalise_opt(arg)))
+	  option = '?';
+	else
+	  {
+	    new = opt_malloc(sizeof(struct rbl_domain_list));
+	    new->domain_suffix = d;
+	    new->action = (option == LOPT_RBL_BLACKLIST) ?
+		  RBL_ACTION_DENY : RBL_ACTION_DENY;
+	    new->next = daemon->rbl_domains;
+	    daemon->rbl_domains = new;
+	  }
+	break;
+      }
+
+    case LOPT_RBL_BLOCKED_TARGET:
+      {
+	if (strcmp(arg, "self") == 0)
+	  {
+	    /* TODO */
+	    problem = _("'self' not supported yet for rbl-blocked-target");
+	  }
+	else
+	  {
+	    struct addr_list *new = opt_malloc(sizeof(struct addr_list));
+	    if ((new->addr.s_addr = inet_addr(arg)) == (in_addr_t)-1)
+	      problem = _("bad rbl-blocked-target address");
+	    new->next = daemon->rbl_blocked_target;
+	    daemon->rbl_blocked_target = new;
+	  }
+	break;
+      }
       
     default:
       return _("unsupported option (check that dnsmasq was compiled with DHCP/TFTP/DBus support)");
@@ -3217,6 +3304,7 @@ void read_opts(int argc, char **argv, char *compile_opts)
   daemon->tftp_max = TFTP_MAX_CONNECTIONS;
   daemon->edns_pktsz = EDNS_PKTSZ;
   daemon->log_fac = -1;
+  daemon->rbl_default_action = RBL_ACTION_PERMIT;
   add_txt("version.bind", "dnsmasq-" VERSION );
   add_txt("authors.bind", "Simon Kelley");
   add_txt("copyright.bind", COPYRIGHT);

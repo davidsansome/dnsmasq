@@ -624,6 +624,20 @@ struct tftp_prefix {
   struct tftp_prefix *next;
 };
 
+#define RBL_ACTION_PERMIT 1
+#define RBL_ACTION_DENY   2
+
+struct rbl_category_list {
+  char *category_name;
+  int action;
+  struct rbl_category_list *next;
+};
+
+struct rbl_domain_list {
+  char *domain_suffix;
+  int action;
+  struct rbl_domain_list *next;
+};
 
 extern struct daemon {
   /* datastuctures representing the command-line and 
@@ -723,6 +737,13 @@ extern struct daemon {
 
   /* TFTP stuff */
   struct tftp_transfer *tftp_trans;
+
+  /* RBL stuff */
+  char *rbl_suffix;
+  int rbl_default_action;
+  struct rbl_category_list *rbl_categories;
+  struct rbl_domain_list *rbl_domains;
+  struct addr_list *rbl_blocked_target;
 
 } *daemon;
 
