@@ -1552,6 +1552,43 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		    }
 		}
 
+	      if (daemon->rbl_suffix != NULL)
+		{
+		  /* RBL is enabled - check the whitelist and blacklist before
+		     even looking in the cache for an answer. */
+
+		  switch (rbl_domain_action(name))
+		    {
+		      case RBL_ACTION_DENY:
+			{
+			  struct addr_list *tgt;
+
+			  ans = 1;
+			  log_query(flag | F_RBL_BLACKLISTED, name, NULL, NULL);
+
+			  /* Add denied records */
+			  for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
+			    {
+			      /* TODO: AAAA replies */
+			      add_resource_record(
+				    header, limit, &trunc, nameoffset, &ansp,
+				    daemon->local_ttl, NULL, type, C_IN, "4",
+				    &tgt->addr);
+			      anscount ++;
+			    }
+			  break;
+			}
+
+		      case RBL_ACTION_PERMIT:
+			log_query(flag | F_RBL_WHITELISTED, name, NULL, NULL);
+			break;
+
+		      default:
+			/* TODO: check RBL */
+			break;
+		    }
+		}
+
 	    cname_restart:
 	      if ((crecp = cache_find_by_name(NULL, name, now, flag | F_CNAME)))
 		{
