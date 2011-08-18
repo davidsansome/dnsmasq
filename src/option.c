@@ -2877,7 +2877,7 @@ static char *one_opt(int option, char *arg, char *gen_prob, int command_line)
 	    new = opt_malloc(sizeof(struct rbl_domain_list));
 	    new->domain_suffix = d;
 	    new->action = (option == LOPT_RBL_BLACKLIST) ?
-		  RBL_ACTION_DENY : RBL_ACTION_DENY;
+		  RBL_ACTION_DENY : RBL_ACTION_PERMIT;
 	    new->next = daemon->rbl_domains;
 	    daemon->rbl_domains = new;
 	  }

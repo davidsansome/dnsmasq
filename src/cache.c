@@ -1212,7 +1212,17 @@ void log_query(unsigned int flags, char *name, struct all_addr *addr, char *arg)
   else if (flags & F_RRNAME)
     dest = arg;
     
-  if (flags & F_CONFIG)
+  if (flags & F_RBL_BLACKLISTED)
+    {
+      source = "query";
+      dest = "blacklisted by rbl";
+    }
+  else if (flags & F_RBL_WHITELISTED)
+    {
+      source = "query";
+      dest = "whitelisted by rbl";
+    }
+  else if (flags & F_CONFIG)
     source = "config";
   else if (flags & F_DHCP)
     source = "DHCP";

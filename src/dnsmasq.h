@@ -311,6 +311,8 @@ struct crec {
 #define F_RRNAME    (1u<<17)
 #define F_SERVER    (1u<<18)
 #define F_QUERY     (1u<<19)
+#define F_RBL_BLACKLISTED (1u<<20)
+#define F_RBL_WHITELISTED (1u<<21)
 
 
 /* struct sockaddr is not large enough to hold any address,
@@ -402,6 +404,8 @@ struct hostsfile {
 
 #define FREC_NOREBIND           1
 #define FREC_CHECKING_DISABLED  2
+#define FREC_RBL_CAT_QUERY      4
+#define FREC_RBL_REAL_QUERY     8
 
 struct frec {
   union mysockaddr source;
@@ -627,8 +631,9 @@ struct tftp_prefix {
   struct tftp_prefix *next;
 };
 
-#define RBL_ACTION_PERMIT 1
-#define RBL_ACTION_DENY   2
+#define RBL_ACTION_UNKNOWN 0
+#define RBL_ACTION_PERMIT  1
+#define RBL_ACTION_DENY    2
 
 struct rbl_category_list {
   char *category_name;
@@ -971,3 +976,6 @@ void check_tftp_listeners(fd_set *rset, time_t now);
 int get_incoming_mark(union mysockaddr *peer_addr, struct all_addr *local_addr,
 		      int istcp, unsigned int *markp);
 #endif
+
+/* rbl.c */
+int rbl_domain_action(char* name);

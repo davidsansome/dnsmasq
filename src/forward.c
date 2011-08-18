@@ -234,7 +234,7 @@ static unsigned int search_servers(time_t now, struct all_addr **addrpp,
 
 static int forward_query(int udpfd, union mysockaddr *udpaddr,
 			 struct all_addr *dst_addr, unsigned int dst_iface,
-			 struct dns_header *header, size_t plen, time_t now, struct frec *forward)
+			 struct dns_header *header, size_t plen, time_t now, struct frec **forward)
 {
   char *domain = NULL;
   int type = 0, norebind = 0;
@@ -249,47 +249,47 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
   
   /* may be no servers available. */
   if (!daemon->servers)
-    forward = NULL;
-  else if (forward || (forward = lookup_frec_by_sender(ntohs(header->id), udpaddr, crc)))
+    *forward = NULL;
+  else if (*forward || (*forward = lookup_frec_by_sender(ntohs(header->id), udpaddr, crc)))
     {
       /* retry on existing query, send to all available servers  */
-      domain = forward->sentto->domain;
-      forward->sentto->failed_queries++;
+      domain = (*forward)->sentto->domain;
+      (*forward)->sentto->failed_queries++;
       if (!option_bool(OPT_ORDER))
 	{
-	  forward->forwardall = 1;
+	  (*forward)->forwardall = 1;
 	  daemon->last_server = NULL;
 	}
-      type = forward->sentto->flags & SERV_TYPE;
-      if (!(start = forward->sentto->next))
+      type = (*forward)->sentto->flags & SERV_TYPE;
+      if (!(start = (*forward)->sentto->next))
 	start = daemon->servers; /* at end of list, recycle */
-      header->id = htons(forward->new_id);
+      header->id = htons((*forward)->new_id);
     }
   else 
     {
       if (gotname)
 	flags = search_servers(now, &addrp, gotname, daemon->namebuff, &type, &domain, &norebind);
       
-      if (!flags && !(forward = get_new_frec(now, NULL)))
+      if (!flags && !(*forward = get_new_frec(now, NULL)))
 	/* table full - server failure. */
 	flags = F_NEG;
       
-      if (forward)
+      if (*forward)
 	{
-	  forward->source = *udpaddr;
-	  forward->dest = *dst_addr;
-	  forward->iface = dst_iface;
-	  forward->orig_id = ntohs(header->id);
-	  forward->new_id = get_id(crc);
-	  forward->fd = udpfd;
-	  forward->crc = crc;
-	  forward->forwardall = 0;
+	  (*forward)->source = *udpaddr;
+	  (*forward)->dest = *dst_addr;
+	  (*forward)->iface = dst_iface;
+	  (*forward)->orig_id = ntohs(header->id);
+	  (*forward)->new_id = get_id(crc);
+	  (*forward)->fd = udpfd;
+	  (*forward)->crc = crc;
+	  (*forward)->forwardall = 0;
 	  if (norebind)
-	    forward->flags |= FREC_NOREBIND;
+	    (*forward)->flags |= FREC_NOREBIND;
 	  if (header->hb4 & HB4_CD)
-	    forward->flags |= FREC_CHECKING_DISABLED;
+	    (*forward)->flags |= FREC_CHECKING_DISABLED;
 
-	  header->id = htons(forward->new_id);
+	  header->id = htons((*forward)->new_id);
 	  
 	  /* In strict_order mode, always try servers in the order 
 	     specified in resolv.conf, if a domain is given 
@@ -305,7 +305,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 		       difftime(now, daemon->forwardtime) > FORWARD_TIME)
 		{
 		  start = daemon->servers;
-		  forward->forwardall = 1;
+		  (*forward)->forwardall = 1;
 		  daemon->forwardcount = 0;
 		  daemon->forwardtime = now;
 		}
@@ -314,7 +314,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 	    {
 	      start = daemon->servers;
 	      if (!option_bool(OPT_ORDER))
-		forward->forwardall = 1;
+		(*forward)->forwardall = 1;
 	    }
 	}
     }
@@ -323,7 +323,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
      if we fail to send to all nameservers, send back an error
      packet straight away (helps modem users when offline)  */
   
-  if (!flags && forward)
+  if (!flags && *forward)
     {
       struct server *firstsentto = start;
       int forwarded = 0;
@@ -351,20 +351,20 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 #ifdef HAVE_IPV6
 		  if (start->addr.sa.sa_family == AF_INET6)
 		    {
-		      if (!forward->rfd6 &&
-			  !(forward->rfd6 = allocate_rfd(AF_INET6)))
+		      if (!(*forward)->rfd6 &&
+			  !((*forward)->rfd6 = allocate_rfd(AF_INET6)))
 			break;
-		      daemon->rfd_save = forward->rfd6;
-		      fd = forward->rfd6->fd;
+		      daemon->rfd_save = (*forward)->rfd6;
+		      fd = (*forward)->rfd6->fd;
 		    }
 		  else
 #endif
 		    {
-		      if (!forward->rfd4 &&
-			  !(forward->rfd4 = allocate_rfd(AF_INET)))
+		      if (!(*forward)->rfd4 &&
+			  !((*forward)->rfd4 = allocate_rfd(AF_INET)))
 			break;
-		      daemon->rfd_save = forward->rfd4;
-		      fd = forward->rfd4->fd;
+		      daemon->rfd_save = (*forward)->rfd4;
+		      fd = (*forward)->rfd4->fd;
 		    }
 
 #ifdef HAVE_CONNTRACK
@@ -403,10 +403,10 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 #endif 
 		  start->queries++;
 		  forwarded = 1;
-		  forward->sentto = start;
-		  if (!forward->forwardall) 
+		  (*forward)->sentto = start;
+		  if (!(*forward)->forwardall)
 		    break;
-		  forward->forwardall++;
+		  (*forward)->forwardall++;
 		}
 	    } 
 	  
@@ -421,8 +421,8 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 	return 1;
       
       /* could not send on, prepare to return */ 
-      header->id = htons(forward->orig_id);
-      free_frec(forward); /* cancel */
+      header->id = htons((*forward)->orig_id);
+      free_frec(*forward); /* cancel */
     }	  
   
   /* could not send on, return empty answer or address if known for whole domain */
@@ -574,7 +574,7 @@ void reply_query(int fd, int family, time_t now)
 	  if ((nn = resize_packet(header, (size_t)n, pheader, plen)))
 	    {
 	      header->hb3 &= ~(HB3_QR | HB3_TC);
-	      forward_query(-1, NULL, NULL, 0, header, nn, now, forward);
+	      forward_query(-1, NULL, NULL, 0, header, nn, now, &forward);
 	      return;
 	    }
 	}
@@ -653,6 +653,7 @@ void receive_query(struct listener *listen, time_t now)
 		 CMSG_SPACE(sizeof(struct sockaddr_dl))];
 #endif
   } control_u;
+  struct frec *forward = NULL;
   
   /* packet buffer overwritten */
   daemon->srv_save = NULL;
@@ -796,8 +797,11 @@ void receive_query(struct listener *listen, time_t now)
       daemon->local_answer++;
     }
   else if (forward_query(listen->fd, &source_addr, &dst_addr, if_index,
-			 header, (size_t)n, now, NULL))
-    daemon->queries_forwarded++;
+			 header, (size_t)n, now, &forward))
+    {
+      daemon->queries_forwarded++;
+      forward->flags |= FREC_RBL_REAL_QUERY;
+    }
   else
     daemon->local_answer++;
 }
