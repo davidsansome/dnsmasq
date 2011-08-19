@@ -522,3 +522,9 @@ int read_write(int fd, unsigned char *packet, int size, int rw)
   return 1;
 }
 
+void free_txt_record(struct txt_record* txt)
+{
+  free(txt->name);
+  free(txt->txt);
+}
+
