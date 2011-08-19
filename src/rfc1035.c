@@ -16,11 +16,6 @@
 
 #include "dnsmasq.h"
 
-static int add_resource_record(struct dns_header *header, char *limit, int *truncp, 
-			       unsigned int nameoffset, unsigned char **pp, 
-			       unsigned long ttl, unsigned int *offset, unsigned short type, 
-			       unsigned short class, char *format, ...);
-
 #define CHECK_LEN(header, pp, plen, len) \
     ((size_t)((pp) - (unsigned char *)(header) + (len)) <= (plen))
 
@@ -1228,8 +1223,8 @@ int check_for_bogus_wildcard(struct dns_header *header, size_t qlen, char *name,
   return 0;
 }
 
-static int add_resource_record(struct dns_header *header, char *limit, int *truncp, unsigned int nameoffset, unsigned char **pp, 
-			       unsigned long ttl, unsigned int *offset, unsigned short type, unsigned short class, char *format, ...)
+int add_resource_record(struct dns_header *header, char *limit, int *truncp, unsigned int nameoffset, unsigned char **pp,
+			unsigned long ttl, unsigned int *offset, unsigned short type, unsigned short class, char *format, ...)
 {
   va_list ap;
   unsigned char *sav, *p = *pp;
@@ -1438,9 +1433,6 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		  if (!crecp)
 		    break;
 
-		  if (!(crecp->flags & F_TXT))
-		    continue;
-
 		  struct txt_record* txt = &crecp->addr.txt;
 		  if (add_resource_record(header, limit, &trunc, nameoffset, &ansp,
 					  crec_ttl(crecp, now), NULL,
@@ -1635,48 +1627,32 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		  /* RBL is enabled - check the whitelist and blacklist before
 		     even looking in the cache for an answer. */
 
-		  if (rbl_is_whitelisted(name))
-		    log_query(flag | F_RBL_WHITELISTED, name, NULL, NULL);
-		  else if (rbl_is_blacklisted(name))
+		  int log_flag = 0;
+		  int action = rbl_domainlist_action(name, &log_flag);
+
+		  if (action == RBL_ACTION_UNKNOWN)
 		    {
-		      struct rbl_target_list *tgt;
-
-		      ans = 1;
-		      log_query(flag | F_RBL_BLACKLISTED, name, NULL, NULL);
-
-		      /* Find suitable (A or AAAA) records to return instead of
-			 the name's real address. */
-		      if (qtype == T_A)
-			for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
-			  {
-			    if (tgt->type != F_IPV4)
-			      continue;
-
-			    add_resource_record(
-				  header, limit, &trunc, nameoffset, &ansp,
-				  daemon->local_ttl, NULL, type, C_IN, "4",
-				  &tgt->addr.addr.addr4);
-			    anscount ++;
-			  }
-#ifdef HAVE_IPV6
-		      else if (qtype == T_AAAA)
-			for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
-			  {
-			    if (tgt->type != F_IPV6)
-			      continue;
-
-			    add_resource_record(
-				  header, limit, &trunc, nameoffset, &ansp,
-				  daemon->local_ttl, NULL, type, C_IN, "6",
-				  &tgt->addr.addr.addr6);
-			    anscount ++;
-			  }
-#endif
-		      break;
+		      /* The name is neither whitelisted nor blacklisted - we
+			 need to look up the domain's category.  Check the
+			 cache for a matching TXT record first. */
+		      char txtname[MAXDNAME];
+		      if (!rbl_txtname(name, MAXDNAME, txtname))
+			{
+			  /* The name was too long - use the default action */
+			  log_flag |= F_RBL_TOO_LONG;
+			  action = daemon->rbl_default_action;
+			}
+		      else
+			{
+			  if ((crecp = cache_find_by_name(NULL, txtname, now, F_TXT)) != NULL)
+			    action = rbl_category_action(crecp->addr.txt.txt, &log_flag);
+			  else
+			    {} /* TODO: make a TXT request */
+			}
 		    }
-		  else
-		    {
-		    }
+
+		  rbl_respond(action, log_flag, name, flag, qtype, header, limit,
+			      &trunc, nameoffset, &ansp, type, &ans, &anscount);
 		}
 
 	    cname_restart:
