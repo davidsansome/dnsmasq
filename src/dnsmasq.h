@@ -313,8 +313,12 @@ struct crec {
 #define F_RRNAME    (1u<<17)
 #define F_SERVER    (1u<<18)
 #define F_QUERY     (1u<<19)
-#define F_RBL_BLACKLISTED (1u<<20)
-#define F_RBL_WHITELISTED (1u<<21)
+#define F_RBL_MASK  (0x07<<20)
+#define F_RBL_BLACKLISTED        (1u<<20)
+#define F_RBL_WHITELISTED        (2u<<20)
+#define F_RBL_PERMITTED_CATEGORY (3u<<20)
+#define F_RBL_DENIED_CATEGORY    (4u<<20)
+#define F_RBL_TOO_LONG           (5u<<20)
 
 
 /* struct sockaddr is not large enough to hold any address,
@@ -637,6 +641,9 @@ struct tftp_prefix {
 #define RBL_ACTION_PERMIT  1
 #define RBL_ACTION_DENY    2
 
+#define RBL_MAX_CATCOUNT   32
+#define RBL_MAX_CATSIZE    1024 /* Leave 31 characters per category name */
+
 struct rbl_category_list {
   char *category_name;
   int action;
@@ -805,6 +812,10 @@ unsigned int questions_crc(struct dns_header *header, size_t plen, char *buff);
 size_t resize_packet(struct dns_header *header, size_t plen, 
 		  unsigned char *pheader, size_t hlen);
 size_t add_mac(struct dns_header *header, size_t plen, char *limit, union mysockaddr *l3);
+int add_resource_record(struct dns_header *header, char *limit, int *truncp,
+			unsigned int nameoffset, unsigned char **pp,
+			unsigned long ttl, unsigned int *offset, unsigned short type,
+			unsigned short class, char *format, ...);
 
 /* util.c */
 void rand_init(void);
@@ -989,3 +1000,12 @@ int get_incoming_mark(union mysockaddr *peer_addr, struct all_addr *local_addr,
 /* rbl.c */
 int rbl_is_whitelisted(char *name);
 int rbl_is_blacklisted(char *name);
+int rbl_domainlist_action(char *name, int *log_flag);
+int rbl_category_action(const unsigned char *categories_original,
+			int *log_flag);
+int rbl_txtname(const char *name, size_t buf_size, char *buf);
+void rbl_respond(int action, int log_flag,
+		 char *name, int flag, int qtype,
+		 struct dns_header* header, char* limit, int* trunc,
+		 unsigned int nameoffset, unsigned char** ansp,
+		 unsigned short type, int* ans, int* anscount);
