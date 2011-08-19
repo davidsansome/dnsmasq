@@ -1557,36 +1557,47 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		  /* RBL is enabled - check the whitelist and blacklist before
 		     even looking in the cache for an answer. */
 
-		  switch (rbl_domain_action(name))
+		  if (rbl_is_whitelisted(name))
+		    log_query(flag | F_RBL_WHITELISTED, name, NULL, NULL);
+		  else if (rbl_is_blacklisted(name))
 		    {
-		      case RBL_ACTION_DENY:
-			{
-			  struct addr_list *tgt;
+		      struct rbl_target_list *tgt;
 
-			  ans = 1;
-			  log_query(flag | F_RBL_BLACKLISTED, name, NULL, NULL);
+		      ans = 1;
+		      log_query(flag | F_RBL_BLACKLISTED, name, NULL, NULL);
 
-			  /* Add denied records only for A queries, for AAAA
-			     queries we'll return NODATA. */
-			  if (qtype == T_A)
-			    for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
-			      {
-				add_resource_record(
-				      header, limit, &trunc, nameoffset, &ansp,
-				      daemon->local_ttl, NULL, type, C_IN, "4",
-				      &tgt->addr);
-				anscount ++;
-			      }
-			  break;
-			}
+		      /* Find suitable (A or AAAA) records to return instead of
+			 the name's real address. */
+		      if (qtype == T_A)
+			for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
+			  {
+			    if (tgt->type != F_IPV4)
+			      continue;
 
-		      case RBL_ACTION_PERMIT:
-			log_query(flag | F_RBL_WHITELISTED, name, NULL, NULL);
-			break;
+			    add_resource_record(
+				  header, limit, &trunc, nameoffset, &ansp,
+				  daemon->local_ttl, NULL, type, C_IN, "4",
+				  &tgt->addr.addr.addr4);
+			    anscount ++;
+			  }
+#ifdef HAVE_IPV6
+		      else if (qtype == T_AAAA)
+			for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
+			  {
+			    if (tgt->type != F_IPV6)
+			      continue;
 
-		      default:
-			/* TODO: check RBL */
-			break;
+			    add_resource_record(
+				  header, limit, &trunc, nameoffset, &ansp,
+				  daemon->local_ttl, NULL, type, C_IN, "6",
+				  &tgt->addr.addr.addr6);
+			    anscount ++;
+			  }
+#endif
+		      break;
+		    }
+		  else
+		    {
 		    }
 		}
 

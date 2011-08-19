@@ -1199,12 +1199,12 @@ void log_query(unsigned int flags, char *name, struct all_addr *addr, char *arg)
     
   if (flags & F_RBL_BLACKLISTED)
     {
-      source = "query";
+      source = "suffix";
       dest = "blacklisted by rbl";
     }
   else if (flags & F_RBL_WHITELISTED)
     {
-      source = "query";
+      source = "suffix";
       dest = "whitelisted by rbl";
     }
   else if (flags & F_CONFIG)
