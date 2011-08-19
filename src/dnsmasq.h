@@ -643,8 +643,13 @@ struct rbl_category_list {
 
 struct rbl_domain_list {
   char *domain_suffix;
-  int action;
   struct rbl_domain_list *next;
+};
+
+struct rbl_target_list {
+  struct all_addr addr;
+  int type; /* F_IPV4 or F_IPV6 */
+  struct rbl_target_list *next;
 };
 
 extern struct daemon {
@@ -750,8 +755,9 @@ extern struct daemon {
   char *rbl_suffix;
   int rbl_default_action;
   struct rbl_category_list *rbl_categories;
-  struct rbl_domain_list *rbl_domains;
-  struct addr_list *rbl_blocked_target;
+  struct rbl_domain_list *rbl_blacklist;
+  struct rbl_domain_list *rbl_whitelist;
+  struct rbl_target_list *rbl_blocked_target;
 
 } *daemon;
 
@@ -977,4 +983,5 @@ int get_incoming_mark(union mysockaddr *peer_addr, struct all_addr *local_addr,
 #endif
 
 /* rbl.c */
-int rbl_domain_action(char* name);
+int rbl_is_whitelisted(char *name);
+int rbl_is_blacklisted(char *name);
