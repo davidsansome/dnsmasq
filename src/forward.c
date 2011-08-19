@@ -43,7 +43,7 @@ static void send_from(int fd, int nowild, char *packet, size_t len,
     char control6[CMSG_SPACE(sizeof(struct in6_pktinfo))];
 #endif
   } control_u;
-  
+
   iov[0].iov_base = packet;
   iov[0].iov_len = len;
 
@@ -123,6 +123,7 @@ static unsigned int search_servers(time_t now, struct all_addr **addrpp,
   unsigned int matchlen = 0;
   struct server *serv;
   unsigned int flags = 0;
+
   
   for (serv = daemon->servers; serv; serv=serv->next)
     /* domain matches take priority over NODOTS matches */
@@ -243,7 +244,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
   unsigned int flags = 0;
   unsigned int gotname = extract_request(header, plen, daemon->namebuff, NULL);
   struct server *start = NULL;
-    
+
   /* RFC 4035: sect 4.6 para 2 */
   header->hb4 &= ~HB4_AD;
   
@@ -519,7 +520,7 @@ void reply_query(int fd, int family, time_t now)
   ssize_t n = recvfrom(fd, daemon->packet, daemon->edns_pktsz, 0, &serveraddr.sa, &addrlen);
   size_t nn;
   struct server *server;
-  
+
   /* packet buffer overwritten */
   daemon->srv_save = NULL;
   

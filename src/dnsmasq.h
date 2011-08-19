@@ -280,6 +280,7 @@ struct crec {
       struct crec *cache;
       int uid;
     } cname;
+    struct txt_record txt;
   } addr;
   unsigned short flags;
   union {
@@ -303,6 +304,7 @@ struct crec {
 #define F_CNAME     (1u<<11)
 #define F_NOERR     (1u<<12)
 #define F_CONFIG    (1u<<13)
+#define F_TXT       (1u<<14)
 /* below here are only valid as args to log_query: cache
    entries are limited to 16 bits */
 #define F_UPSTREAM  (1u<<16)
@@ -771,7 +773,8 @@ struct crec *cache_find_by_name(struct crec *crecp,
 void cache_end_insert(void);
 void cache_start_insert(void);
 struct crec *cache_insert(char *name, struct all_addr *addr,
-			  time_t now, unsigned long ttl, unsigned short flags);
+			  time_t now, unsigned long ttl, unsigned short flags,
+                          struct txt_record* txt);
 void cache_reload(void);
 void cache_add_dhcp_entry(char *host_name, struct in_addr *host_address, time_t ttd);
 void cache_unhash_dhcp(void);
@@ -824,6 +827,7 @@ int expand_buf(struct iovec *iov, size_t size);
 char *print_mac(char *buff, unsigned char *mac, int len);
 void bump_maxfd(int fd, int *max);
 int read_write(int fd, unsigned char *packet, int size, int rw);
+void free_txt_record(struct txt_record* txt);
 
 /* log.c */
 void die(char *message, char *arg1, int exit_code);

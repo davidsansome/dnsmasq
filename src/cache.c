@@ -194,6 +194,11 @@ static void cache_free(struct crec *crecp)
       big_free = crecp->name.bname;
       crecp->flags &= ~F_BIGNAME;
     }
+
+  if (crecp->flags & F_TXT)
+    {
+      free_txt_record(&crecp->addr.txt);
+    }
 }    
 
 /* insert a new cache entry at the head of the list (youngest entry) */
@@ -357,7 +362,8 @@ void cache_start_insert(void)
 }
  
 struct crec *cache_insert(char *name, struct all_addr *addr, 
-			  time_t now,  unsigned long ttl, unsigned short flags)
+			  time_t now,  unsigned long ttl, unsigned short flags,
+			  struct txt_record* txt)
 {
   struct crec *new;
   union bigname *big_name = NULL;
@@ -454,7 +460,9 @@ struct crec *cache_insert(char *name, struct all_addr *addr,
   else
     *cache_get_name(new) = 0;
 
-  if (addr)
+  if (txt)
+    new->addr.txt = *txt;
+  else if (addr)
     new->addr.addr = *addr;
   else
     new->addr.cname.cache = NULL;
@@ -1081,6 +1089,11 @@ void dump_cache(time_t now)
 	    p += sprintf(p, "%-40.40s ", cache_get_name(cache));
 	    if ((cache->flags & F_NEG) && (cache->flags & F_FORWARD))
 	      a = ""; 
+            else if (cache->flags & F_TXT)
+              {
+                struct txt_record *txt = &cache->addr.txt;
+		a = (char*) txt->txt;
+              }
 	    else if (cache->flags & F_CNAME) 
 	      {
 		a = "";
@@ -1100,7 +1113,7 @@ void dump_cache(time_t now)
             else 
 	      a = inet_ntoa(cache->addr.addr.addr.addr4);
 #endif
-	    p += sprintf(p, "%-30.30s %s%s%s%s%s%s%s%s%s%s  ", a, 
+	    p += sprintf(p, "%-30.30s %s%s%s%s%s%s%s%s%s%s%s  ", a, 
 			 cache->flags & F_IPV4 ? "4" : "",
 			 cache->flags & F_IPV6 ? "6" : "",
 			 cache->flags & F_CNAME ? "C" : "",
@@ -1110,6 +1123,7 @@ void dump_cache(time_t now)
 			 cache->flags & F_DHCP ? "D" : " ",
 			 cache->flags & F_NEG ? "N" : " ",
 			 cache->flags & F_NXDOMAIN ? "X" : " ",
+			 cache->flags & F_TXT ? "T" : " ",
 			 cache->flags & F_HOSTS ? "H" : " ");
 #ifdef HAVE_BROKEN_RTC
 	    p += sprintf(p, "%lu", cache->flags & F_IMMORTAL ? 0: (unsigned long)(cache->ttd - now));
