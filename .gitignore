@@ -5,3 +5,5 @@ dnsmasq.files
 dnsmasq.includes
 *.o
 src/dnsmasq
+*.orig
+*.rej
