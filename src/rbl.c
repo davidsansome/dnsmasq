@@ -16,14 +16,12 @@
 
 #include "dnsmasq.h"
 
-/* Returns RBL_ACTION_{PERMIT|DENY} if the name is in the whitelist or
-   blacklist, otherwise returns RBL_ACTION_UNKNOWN. */
-int rbl_domain_action(char* name)
+static int check_list(const struct rbl_domain_list *list, char *name)
 {
   unsigned int namelen = strlen(name);
 
-  struct rbl_domain_list *domain;
-  for (domain = daemon->rbl_domains ; domain != NULL ; domain = domain->next)
+  const struct rbl_domain_list *domain;
+  for (domain = list ; domain != NULL ; domain = domain->next)
     {
       unsigned int domainlen = strlen(domain->domain_suffix);
       char *matchstart = name + namelen - domainlen;
@@ -31,8 +29,18 @@ int rbl_domain_action(char* name)
 	  hostname_isequal(matchstart, domain->domain_suffix) &&
 	  (domainlen == 0 || namelen == domainlen || *(matchstart-1) == '.' ))
 	{
-	  return domain->action;
+	  return 1;
 	}
     }
-  return RBL_ACTION_UNKNOWN;
+  return 0;
+}
+
+int rbl_is_whitelisted(char *name)
+{
+  return check_list(daemon->rbl_whitelist, name);
+}
+
+int rbl_is_blacklisted(char *name)
+{
+  return check_list(daemon->rbl_blacklist, name);
 }

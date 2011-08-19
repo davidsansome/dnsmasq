@@ -18,6 +18,7 @@
 #define SYSLOG_NAMES
 #include "dnsmasq.h"
 #include <setjmp.h>
+#include <arpa/inet.h>
 
 static volatile int mem_recover = 0;
 static jmp_buf mem_jmp;
@@ -2869,17 +2870,18 @@ static char *one_opt(int option, char *arg, char *gen_prob, int command_line)
       {
 	char *d;
 	struct rbl_domain_list *new;
+	struct rbl_domain_list **list;
 
 	if (!(d = canonicalise_opt(arg)))
 	  option = '?';
 	else
 	  {
+	    list = (option == LOPT_RBL_BLACKLIST) ?
+		  &daemon->rbl_blacklist : &daemon->rbl_whitelist;
 	    new = opt_malloc(sizeof(struct rbl_domain_list));
 	    new->domain_suffix = d;
-	    new->action = (option == LOPT_RBL_BLACKLIST) ?
-		  RBL_ACTION_DENY : RBL_ACTION_PERMIT;
-	    new->next = daemon->rbl_domains;
-	    daemon->rbl_domains = new;
+	    new->next = *list;
+	    *list = new;
 	  }
 	break;
       }
@@ -2893,11 +2895,24 @@ static char *one_opt(int option, char *arg, char *gen_prob, int command_line)
 	  }
 	else
 	  {
-	    struct addr_list *new = opt_malloc(sizeof(struct addr_list));
-	    if ((new->addr.s_addr = inet_addr(arg)) == (in_addr_t)-1)
+	    struct rbl_target_list *new = opt_malloc(sizeof(struct rbl_target_list));
+	    int converted = 0;
+
+#ifdef HAVE_IPV6
+	    if ((converted = inet_pton(AF_INET6, arg, &new->addr.addr)) == 1)
+	      new->type = F_IPV6;
+#endif
+	    if (!converted)
+	      if ((converted = inet_pton(AF_INET, arg, &new->addr.addr)) == 1)
+		new->type = F_IPV4;
+
+	    if (!converted)
 	      problem = _("bad rbl-blocked-target address");
-	    new->next = daemon->rbl_blocked_target;
-	    daemon->rbl_blocked_target = new;
+	    else
+	      {
+		new->next = daemon->rbl_blocked_target;
+		daemon->rbl_blocked_target = new;
+	      }
 	  }
 	break;
       }
