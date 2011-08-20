@@ -273,7 +273,7 @@ static int in_arpa_name_2_addr(char *namein, struct all_addr *addrp)
   return 0;
 }
 
-static unsigned char *skip_name(unsigned char *ansp, struct dns_header *header, size_t plen, int extrabytes)
+unsigned char *skip_name(unsigned char *ansp, struct dns_header *header, size_t plen, int extrabytes)
 {
   while(1)
     {
@@ -328,7 +328,7 @@ static unsigned char *skip_name(unsigned char *ansp, struct dns_header *header, 
   return ansp;
 }
 
-static unsigned char *skip_questions(struct dns_header *header, size_t plen)
+unsigned char *skip_questions(struct dns_header *header, size_t plen)
 {
   int q;
   unsigned char *ansp = (unsigned char *)(header+1);
@@ -1334,7 +1334,8 @@ static unsigned long crec_ttl(struct crec *crecp, time_t now)
 
 /* return zero if we can't answer from cache, or packet size if we can */
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
-		      struct in_addr local_addr, struct in_addr local_netmask, time_t now) 
+		      struct in_addr local_addr, struct in_addr local_netmask, time_t now,
+		      int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf)
 {
   char *name = daemon->namebuff;
   unsigned char *p, *ansp, *pheader;
@@ -1622,37 +1623,43 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		    }
 		}
 
-	      if (daemon->rbl_suffix != NULL && (qtype == T_A || qtype == T_AAAA))
+	      if (daemon->rbl_suffix != NULL && rbl_action &&
+		  (qtype == T_A || qtype == T_AAAA))
 		{
 		  /* RBL is enabled - check the whitelist and blacklist before
 		     even looking in the cache for an answer. */
 
 		  int log_flag = 0;
-		  int action = rbl_domainlist_action(name, &log_flag);
+		  *rbl_action = rbl_domainlist_action(name, &log_flag);
 
-		  if (action == RBL_ACTION_UNKNOWN)
+		  if (*rbl_action == RBL_ACTION_UNKNOWN)
 		    {
 		      /* The name is neither whitelisted nor blacklisted - we
 			 need to look up the domain's category.  Check the
 			 cache for a matching TXT record first. */
-		      char txtname[MAXDNAME];
-		      if (!rbl_txtname(name, MAXDNAME, txtname))
+		      if (!rbl_txtname(name, rbl_txtname_size, rbl_txtname_buf))
 			{
 			  /* The name was too long - use the default action */
 			  log_flag |= F_RBL_TOO_LONG;
-			  action = daemon->rbl_default_action;
+			  *rbl_action = daemon->rbl_default_action;
 			}
 		      else
 			{
-			  if ((crecp = cache_find_by_name(NULL, txtname, now, F_TXT)) != NULL)
-			    action = rbl_category_action(crecp->addr.txt.txt, &log_flag);
-			  else
-			    {} /* TODO: make a TXT request */
+			  *rbl_action = rbl_cached_category_action(
+				rbl_txtname_buf, now, &log_flag);
+
+			  if (*rbl_action == RBL_ACTION_UNKNOWN)
+			    *rbl_action = RBL_ACTION_LOOKUP;
 			}
 		    }
 
-		  rbl_respond(action, log_flag, name, flag, qtype, header, limit,
-			      &trunc, nameoffset, &ansp, type, &ans, &anscount);
+		  if (*rbl_action == RBL_ACTION_PERMIT)
+		    log_query(flag | log_flag, name, NULL, NULL);
+		  else if (*rbl_action == RBL_ACTION_DENY)
+		    {
+		      log_query(flag | log_flag, name, NULL, NULL);
+		      return rbl_respond_denied(header, qlen);
+		    }
 		}
 
 	    cname_restart:

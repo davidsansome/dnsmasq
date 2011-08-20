@@ -426,6 +426,10 @@ struct frec {
   int fd, forwardall, flags;
   unsigned int crc;
   time_t time;
+  unsigned int rbl_other_crc;
+  unsigned short rbl_other_id;
+  char *rbl_response_packet;
+  int rbl_response_size;
   struct frec *next;
 };
 
@@ -640,6 +644,7 @@ struct tftp_prefix {
 #define RBL_ACTION_UNKNOWN 0
 #define RBL_ACTION_PERMIT  1
 #define RBL_ACTION_DENY    2
+#define RBL_ACTION_LOOKUP  3
 
 #define RBL_MAX_CATCOUNT   32
 #define RBL_MAX_CATSIZE    1024 /* Leave 31 characters per category name */
@@ -768,6 +773,10 @@ extern struct daemon {
   struct rbl_domain_list *rbl_whitelist;
   struct rbl_target_list *rbl_blocked_target;
 
+  char *rbl_txt_packet;
+  struct dns_header *rbl_txt_header;
+  char *rbl_txt_packet_p;
+
 } *daemon;
 
 /* cache.c */
@@ -802,7 +811,8 @@ size_t setup_reply(struct dns_header *header, size_t  qlen,
 int extract_addresses(struct dns_header *header, size_t qlen, char *namebuff, 
 		      time_t now, int is_sign, int checkrebind, int checking_disabled);
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
-		   struct in_addr local_addr, struct in_addr local_netmask, time_t now);
+		   struct in_addr local_addr, struct in_addr local_netmask, time_t now,
+		   int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf);
 int check_for_bogus_wildcard(struct dns_header *header, size_t qlen, char *name, 
 			     struct bogus_addr *addr, time_t now);
 unsigned char *find_pseudoheader(struct dns_header *header, size_t plen,
@@ -816,6 +826,8 @@ int add_resource_record(struct dns_header *header, char *limit, int *truncp,
 			unsigned int nameoffset, unsigned char **pp,
 			unsigned long ttl, unsigned int *offset, unsigned short type,
 			unsigned short class, char *format, ...);
+unsigned char *skip_questions(struct dns_header *header, size_t plen);
+unsigned char *skip_name(unsigned char *ansp, struct dns_header *header, size_t plen, int extrabytes);
 
 /* util.c */
 void rand_init(void);
@@ -1004,9 +1016,6 @@ int rbl_is_blacklisted(char *name);
 int rbl_domainlist_action(char *name, int *log_flag);
 int rbl_category_action(const unsigned char *categories_original,
 			int *log_flag);
+int rbl_cached_category_action(char *txt_name, time_t now, int* log_flag);
 int rbl_txtname(const char *name, size_t buf_size, char *buf);
-void rbl_respond(int action, int log_flag,
-		 char *name, int flag, int qtype,
-		 struct dns_header* header, char* limit, int* trunc,
-		 unsigned int nameoffset, unsigned char** ansp,
-		 unsigned short type, int* ans, int* anscount);
+int rbl_respond_denied(struct dns_header *header, size_t plen);
