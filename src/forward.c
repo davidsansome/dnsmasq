@@ -612,12 +612,126 @@ void reply_query(int fd, int family, time_t now)
 
       if (!option_bool(OPT_NO_REBIND))
 	check_rebind = 0;
-      
+
       if ((nn = process_reply(header, now, server, (size_t)n, check_rebind, forward->flags & FREC_CHECKING_DISABLED)))
 	{
+	  struct frec *other_frec;
+	  int rbl_action = RBL_ACTION_UNKNOWN;
+	  int rbl_log_flag = 0;
+
+	  if (forward->flags & FREC_RBL_CAT_QUERY)
+	    {
+	      char txt_name[MAXDNAME + 1];
+	      int suffix_length, name_length;
+
+	      strncpy(txt_name, daemon->namebuff, MAXDNAME);
+	      txt_name[MAXDNAME] = '\0';
+
+	      /* Our TXT response was put in the cache already by process_reply. */
+	      rbl_action = rbl_cached_category_action(txt_name, now, &rbl_log_flag);
+
+	      if (rbl_action == RBL_ACTION_UNKNOWN)
+		rbl_action = daemon->rbl_default_action;
+
+	      suffix_length = strlen(daemon->rbl_suffix);
+	      name_length = strnlen(txt_name, MAXDNAME);
+
+	      /* Take off the suffix for the log message. */
+	      if (name_length > suffix_length)
+		{
+		  name_length = name_length - suffix_length - 1;
+		  txt_name[name_length] = '\0';
+		}
+
+	      /* If the real lookup was still going then don't send the reply yet. */
+	      if ((other_frec = lookup_frec(forward->rbl_other_id, forward->rbl_other_crc)))
+		{
+		  /* Squirrel the action away in the response size field, which
+		     is unused for real frecs. */
+		  other_frec->rbl_response_size = rbl_action;
+		  rbl_action = RBL_ACTION_UNKNOWN;
+
+		  other_frec->rbl_response_packet = whine_malloc(name_length + 1);
+		  memcpy(other_frec->rbl_response_packet, txt_name, name_length);
+		}
+
+	      if (rbl_action == RBL_ACTION_PERMIT)
+		{
+		  /* This domain is permitted. */
+		  struct dns_header *header = (struct dns_header *)forward->rbl_response_packet;
+
+		  /* Send the original response to the client. */
+		  header->id = htons(forward->orig_id);
+		  header->hb4 |= HB4_RA;
+		  send_from(forward->fd, option_bool(OPT_NOWILD), forward->rbl_response_packet,
+			    forward->rbl_response_size,
+			    &forward->source, &forward->dest, forward->iface);
+		}
+	      else if (rbl_action == RBL_ACTION_DENY)
+		{
+		  /* This domain is denied. */
+		  struct dns_header *header = (struct dns_header *)forward->rbl_response_packet;
+		  size_t rsize;
+
+		  log_query(rbl_log_flag, txt_name, NULL, NULL);
+
+		  /* Send a denied response to the client. */
+		  if ((rsize = rbl_respond_denied(header, forward->rbl_response_size)))
+		    {
+		      header->id = htons(forward->orig_id);
+		      header->hb4 |= HB4_RA;
+		      send_from(forward->fd, option_bool(OPT_NOWILD),
+				forward->rbl_response_packet, rsize,
+				&forward->source, &forward->dest, forward->iface);
+		    }
+		}
+
+	      /* Never send the TXT response back to the client. */
+	      free_frec(forward);
+	      return;
+	    }
+	  else if (forward->flags & FREC_RBL_REAL_QUERY)
+	    {
+	      /* Is the TXT query still running? */
+	      if ((other_frec = lookup_frec(forward->rbl_other_id, forward->rbl_other_crc)))
+		{
+		  /* Copy our response into the TXT frec so it can send the
+		     reply to the client later. */
+		  other_frec->rbl_response_size = nn;
+		  other_frec->rbl_response_packet = whine_malloc(nn);
+		  memcpy(other_frec->rbl_response_packet, daemon->packet, nn);
+
+		  /* Don't return to the client just yet. */
+		  free_frec(forward);
+		  return;
+		}
+	      else
+		{
+		  /* The TXT lookup has finished which means its response will
+		     be in the cache.  The TXT lookup also stored its action in
+		     our response size field. */
+
+		  if (forward->rbl_response_size == RBL_ACTION_DENY)
+		    {
+		      /* This domain is denied. */
+		      struct dns_header *header = (struct dns_header *)daemon->packet;
+		      size_t rsize;
+
+		      log_query(F_RBL_DENIED_CATEGORY, forward->rbl_response_packet,
+				NULL, NULL);
+
+		      /* Send a denied response to the client. */
+		      if ((rsize = rbl_respond_denied(header, nn)))
+			{
+			  nn = rsize;
+			}
+		    }
+		}
+	    }
+
 	  header->id = htons(forward->orig_id);
 	  header->hb4 |= HB4_RA; /* recursion if available */
-	  send_from(forward->fd, option_bool(OPT_NOWILD), daemon->packet, nn, 
+	  send_from(forward->fd, option_bool(OPT_NOWILD), daemon->packet, nn,
 		    &forward->source, &forward->dest, forward->iface);
 	}
       free_frec(forward); /* cancel */
@@ -654,6 +768,8 @@ void receive_query(struct listener *listen, time_t now)
 #endif
   } control_u;
   struct frec *forward = NULL;
+  int rbl_action = RBL_ACTION_UNKNOWN;
+  char rbl_txtname[MAXDNAME];
   
   /* packet buffer overwritten */
   daemon->srv_save = NULL;
@@ -789,7 +905,7 @@ void receive_query(struct listener *listen, time_t now)
     }
 
   m = answer_request (header, ((char *) header) + PACKETSZ, (size_t)n, 
-		      dst_addr_4, netmask, now);
+		      dst_addr_4, netmask, now, &rbl_action, MAXDNAME, rbl_txtname);
   if (m >= 1)
     {
       send_from(listen->fd, option_bool(OPT_NOWILD), (char *)header, 
@@ -800,7 +916,46 @@ void receive_query(struct listener *listen, time_t now)
 			 header, (size_t)n, now, &forward))
     {
       daemon->queries_forwarded++;
-      forward->flags |= FREC_RBL_REAL_QUERY;
+
+      if (rbl_action == RBL_ACTION_LOOKUP)
+	{
+	  char *p;
+	  size_t plen;
+	  struct frec *txt_frec = NULL;
+	  unsigned int crc;
+
+	  /* Prepare a TXT lookup to get the domain's category */
+	  p = daemon->rbl_txt_packet_p;
+	  p = (char*) do_rfc1035_name((unsigned char*)p, rbl_txtname);
+	  *(p++) = '\0';
+	  PUTSHORT(T_TXT, p);
+	  PUTSHORT(C_IN, p);
+
+	  plen = p - daemon->rbl_txt_packet;
+	  crc = questions_crc(daemon->rbl_txt_header, plen, daemon->namebuff);
+	  daemon->rbl_txt_header->id = get_id(crc);
+
+	  /* Send the TXT lookup */
+	  if (!forward_query(listen->fd, &source_addr, &dst_addr, if_index,
+			     daemon->rbl_txt_header, plen,
+			     now, &txt_frec))
+	    {
+	      /* If the TXT lookup didn't send we want to discard the real reply
+		 when it arrives. */
+	      free_frec(forward);
+	    }
+	  else
+	    {
+	      /* Link the real frec with the category frec. */
+	      txt_frec->flags |= FREC_RBL_CAT_QUERY;
+	      txt_frec->rbl_other_crc = forward->crc;
+	      txt_frec->rbl_other_id = forward->new_id;
+	      txt_frec->orig_id = forward->orig_id;
+	      forward->flags |= FREC_RBL_REAL_QUERY;
+	      forward->rbl_other_crc = txt_frec->crc;
+	      forward->rbl_other_id = txt_frec->new_id;
+	    }
+	}
     }
   else
     daemon->local_answer++;
@@ -872,7 +1027,7 @@ unsigned char *tcp_request(int confd, time_t now,
       
       /* m > 0 if answered from cache */
       m = answer_request(header, ((char *) header) + 65536, (unsigned int)size, 
-			 dst_addr_4, netmask, now);
+			 dst_addr_4, netmask, now, NULL, 0, NULL);
 
       /* Do this by steam now we're not in the select() loop */
       check_log_writer(NULL); 
@@ -1026,6 +1181,7 @@ static struct frec *allocate_frec(time_t now)
 #ifdef HAVE_IPV6
       f->rfd6 = NULL;
 #endif
+      f->rbl_response_packet = NULL;
       daemon->frec_list = f;
     }
 
@@ -1083,6 +1239,9 @@ static void free_frec(struct frec *f)
     
   f->rfd6 = NULL;
 #endif
+
+  free(f->rbl_response_packet);
+  f->rbl_response_packet = NULL;
 }
 
 /* if wait==NULL return a free or older than TIMEOUT record.
