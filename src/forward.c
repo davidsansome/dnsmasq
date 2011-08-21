@@ -427,7 +427,8 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
 }
 
 static size_t process_reply(struct dns_header *header, time_t now, 
-			    struct server *server, size_t n, int check_rebind, int checking_disabled)
+			    struct server *server, size_t n, int check_rebind, int checking_disabled,
+			    unsigned long minimum_ttl)
 {
   unsigned char *pheader, *sizep;
   int munged = 0, is_sign;
@@ -485,7 +486,7 @@ static size_t process_reply(struct dns_header *header, time_t now,
 	  SET_RCODE(header, NOERROR);
 	}
       
-      if (extract_addresses(header, n, daemon->namebuff, now, is_sign, check_rebind, checking_disabled))
+      if (extract_addresses(header, n, daemon->namebuff, now, is_sign, check_rebind, checking_disabled, minimum_ttl))
 	{
 	  my_syslog(LOG_WARNING, _("possible DNS-rebind attack detected: %s"), daemon->namebuff);
 	  munged = 1;
@@ -600,11 +601,16 @@ void reply_query(int fd, int family, time_t now)
       (RCODE(header) != REFUSED && RCODE(header) != SERVFAIL))
     {
       int check_rebind = !(forward->flags & FREC_NOREBIND);
+      unsigned long minimum_ttl = 0;
 
       if (!option_bool(OPT_NO_REBIND))
 	check_rebind = 0;
 
-      if ((nn = process_reply(header, now, server, (size_t)n, check_rebind, forward->flags & FREC_CHECKING_DISABLED)))
+      /* We rely on the rbl category still being in the cache when we check it. */
+      if (forward->flags & FREC_RBL_CAT_QUERY)
+	minimum_ttl = 2;
+
+      if ((nn = process_reply(header, now, server, (size_t)n, check_rebind, forward->flags & FREC_CHECKING_DISABLED, minimum_ttl)))
 	{
 	  struct frec *other_frec;
 	  int rbl_action = RBL_ACTION_UNKNOWN;
@@ -1117,7 +1123,7 @@ unsigned char *tcp_request(int confd, time_t now,
 		     sending replies containing questions and bogus answers. */
 		  if (crc == questions_crc(header, (unsigned int)m, daemon->namebuff))
 		    m = process_reply(header, now, last_server, (unsigned int)m, 
-				      option_bool(OPT_NO_REBIND) && !norebind, checking_disabled);
+				      option_bool(OPT_NO_REBIND) && !norebind, checking_disabled, 0);
 		  
 		  break;
 		}
