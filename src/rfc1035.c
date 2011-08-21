@@ -774,7 +774,8 @@ static int find_soa(struct dns_header *header, size_t qlen, char *name)
    expired and cleaned out that way. 
    Return 1 if we reject an address because it look like part of dns-rebinding attack. */
 int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t now, 
-		      int is_sign, int check_rebind, int checking_disabled)
+		      int is_sign, int check_rebind, int checking_disabled,
+		      unsigned long minimum_ttl)
 {
   unsigned char *p, *p1, *endrr, *namep;
   int i, j, qtype, qclass, aqtype, aqclass, ardlen, res, searched_soa = 0;
@@ -843,6 +844,9 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t
 		    }
 		  GETSHORT(ardlen, p1);
 		  endrr = p1+ardlen;
+
+		  if (attl < minimum_ttl)
+		    attl = minimum_ttl;
 		  
 		  /* TTL of record is minimum of CNAMES and PTR */
 		  if (attl < cttl)
@@ -903,6 +907,9 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t
                     }
                   GETSHORT(ardlen, p1);
                   endrr = p1+ardlen;
+
+		  if (attl < minimum_ttl)
+		    attl = minimum_ttl;
 
                   if (aqclass == C_IN && aqtype == T_TXT)
                     {
@@ -974,6 +981,9 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t
 		    }
 		  GETSHORT(ardlen, p1);
 		  endrr = p1+ardlen;
+
+		  if (attl < minimum_ttl)
+		    attl = minimum_ttl;
 		  
 		  if (aqclass == C_IN && res != 2 && (aqtype == T_CNAME || aqtype == qtype))
 		    {

@@ -426,10 +426,19 @@ struct frec {
   int fd, forwardall, flags;
   unsigned int crc;
   time_t time;
+
+  /* For a TXT lookup these point to the real lookup, for the real lookup they
+     point to the TXT lookup. */
   unsigned int rbl_other_crc;
   unsigned short rbl_other_id;
+
+  /* These are set in the TXT lookup if the real lookup finishes first, so the
+     TXT response can send the packet back to the client.  If the TXT lookup
+     finishes first they're (ab)used to store the name of the site that was
+     requested, to put in the log message. */
   char *rbl_response_packet;
   int rbl_response_size;
+
   struct frec *next;
 };
 
@@ -809,7 +818,8 @@ size_t setup_reply(struct dns_header *header, size_t  qlen,
 		   struct all_addr *addrp, unsigned int flags,
 		   unsigned long local_ttl);
 int extract_addresses(struct dns_header *header, size_t qlen, char *namebuff, 
-		      time_t now, int is_sign, int checkrebind, int checking_disabled);
+		      time_t now, int is_sign, int checkrebind, int checking_disabled,
+		      unsigned long minimum_ttl);
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
 		   struct in_addr local_addr, struct in_addr local_netmask, time_t now,
 		   int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf);
