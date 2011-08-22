@@ -636,8 +636,14 @@ void reply_query(int fd, int family, time_t now)
 	      /* Our TXT response was put in the cache already by process_reply. */
 	      rbl_action = rbl_cached_category_action(txt_name, now, &rbl_log_flag);
 
-	      if (rbl_action == RBL_ACTION_UNKNOWN)
+	      if (rbl_action == RBL_ACTION_UNCAT) {
 		rbl_action = daemon->rbl_default_action;
+		rbl_log_flag = F_RBL_UNCATEGORISED;
+	      } else if (rbl_action == RBL_ACTION_UNKNOWN) {
+		/* We know the category of the site but it wasn't in the list
+		   of denied categories, so allow it. */
+		rbl_action = RBL_ACTION_PERMIT;
+	      }
 
 	      suffix_length = strlen(daemon->rbl_suffix);
 	      name_length = strnlen(txt_name, MAXDNAME);
@@ -704,7 +710,7 @@ void reply_query(int fd, int family, time_t now)
 		  /* Copy our response into the TXT frec so it can send the
 		     reply to the client later. */
 		  other_frec->rbl_response_size = nn;
-		  other_frec->rbl_response_packet = whine_malloc(nn);
+		  other_frec->rbl_response_packet = whine_malloc(daemon->packet_buff_sz);
 		  memcpy(other_frec->rbl_response_packet, daemon->packet, nn);
 
 		  /* Don't return to the client just yet. */

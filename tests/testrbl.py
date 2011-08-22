@@ -1,5 +1,6 @@
 import os
 import select
+import signal
 import subprocess
 import sys
 import tempfile
@@ -34,7 +35,20 @@ address=/badpart.goodsite.com/5.5.5.5
 
 txt-record=one.domain.com.blocklist.com,category1
 txt-record=two.domain.com.blocklist.com,category1 category2 category3
-txt-record=three.domain.com.blocklist.com,  white     space
+txt-record=three.domain.com.blocklist.com,  white     space category3
+
+txt-record=four.domain.com.blocklist.com,category1
+txt-record=four.domain.com.blocklist.com,category2
+
+address=/one.domain.com/1.1.1.1
+address=/one.domain.com/fe80::1
+address=/two.domain.com/2.2.2.2
+address=/three.domain.com/3.3.3.3
+address=/three.domain.com/fe80::3
+address=/four.domain.com/4.4.4.4
+
+mx-host=badsite.com,mail.badsite.com
+mx-host=one.domain.com,mail.domain.com
 """
 
 
@@ -100,7 +114,15 @@ class RblTest(unittest.TestCase):
       stdout=subprocess.PIPE)
     stdout = handle.communicate()[0]
 
-    self.assertEqual(expected, stdout.splitlines())
+    if sorted(expected) != sorted(stdout.splitlines()):
+      self.read_logs()
+      print self.logs
+
+    self.assertEqual(sorted(expected), sorted(stdout.splitlines()))
+
+  def clear_cache(self):
+    for process in self.server_processes:
+      os.kill(process.pid, signal.SIGHUP)
 
   def test_whitelist(self):
     self.start("""
@@ -119,6 +141,145 @@ class RblTest(unittest.TestCase):
     # Allowed because whitelists are done first
     self.assert_lookup("badpart.goodsite.com", ["5.5.5.5"])
     self.assert_log_contains("name badpart.goodsite.com is whitelisted by rbl")
+
+  def test_whitelist_v6(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-blocked-target=1.2.3.5
+        rbl-blocked-target=fe80::1
+        rbl-blocked-target=fe80::2
+        rbl-blacklist=badsite.com
+    """)
+
+    self.assert_lookup("badsite.com", ["1.2.3.4", "1.2.3.5"])
+    self.assert_lookup("badsite.com", ["fe80::1", "fe80::2"], type="AAAA")
+
+  def test_category1(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-deny-category=category1
+    """)
+
+    self.assert_lookup("one.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name one.domain.com is in a denied rbl category")
+    self.assert_lookup("two.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name two.domain.com is in a denied rbl category")
+    self.assert_lookup("three.domain.com", ["3.3.3.3"])
+
+  def test_category2(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-deny-category=category2
+    """)
+
+    self.assert_lookup("one.domain.com", ["1.1.1.1"])
+    self.assert_lookup("two.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name two.domain.com is in a denied rbl category")
+    self.assert_lookup("three.domain.com", ["3.3.3.3"])
+
+  def test_category3(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-deny-category=category3
+    """)
+
+    self.assert_lookup("one.domain.com", ["1.1.1.1"])
+    self.assert_lookup("two.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name two.domain.com is in a denied rbl category")
+    self.assert_lookup("three.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name three.domain.com is in a denied rbl category")
+
+  def test_multiple_txt_records_1(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-deny-category=category1
+    """)
+
+    # Do 100 lookups because the order of returned TXT records might change
+    for _ in xrange(100):
+      self.assert_lookup("four.domain.com", ["1.2.3.4"])
+      self.clear_cache()
+
+  def test_multiple_txt_records_2(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-deny-category=category2
+    """)
+
+    # Do 100 lookups because the order of returned TXT records might change
+    for _ in xrange(100):
+      self.assert_lookup("four.domain.com", ["1.2.3.4"])
+      self.clear_cache()
+
+  def test_aaaa_1(self):
+    self.start("""
+        rbl-blocked-target=fe80::ffff
+        rbl-deny-category=category1
+    """)
+
+    self.assert_lookup("one.domain.com", [], type="A")
+    self.assert_lookup("one.domain.com", ["fe80::ffff"], type="AAAA")
+    self.assert_lookup("three.domain.com", ["fe80::3"], type="AAAA")
+
+  def test_aaaa_3(self):
+    self.start("""
+        rbl-blocked-target=fe80::ffff
+        rbl-deny-category=category3
+    """)
+
+    self.assert_lookup("one.domain.com", ["fe80::1"], type="AAAA")
+    self.assert_lookup("two.domain.com", ["fe80::ffff"], type="AAAA")
+    self.assert_lookup("three.domain.com", ["fe80::ffff"], type="AAAA")
+
+  def test_mx(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-blacklist=badsite.com
+        rbl-deny-category=category1
+    """)
+
+    # MX lookups shouldn't be blocked
+    self.assert_lookup("badsite.com", ["1 mail.badsite.com."], type="MX")
+    self.assert_lookup("one.domain.com", ["1 mail.domain.com."], type="MX")
+
+    # And we shouldn't even try to query the blocklist
+    self.read_logs()
+    self.assertFalse("blocklist.com" in self.logs)
+
+  def test_default(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-default-action=deny
+    """)
+
+    # Hostnames that aren't categorised should be blocked
+    self.assert_lookup("othersite.com", ["1.2.3.4"])
+    self.assert_log_contains("name othersite.com is uncategorised")
+
+    # Hostnames that are categorised, but don't match any rules should not be
+    # blocked
+    self.assert_lookup("one.domain.com", ["1.1.1.1"])
+
+  def test_whitelisted_blocked(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-whitelist=one.domain.com
+        rbl-deny-category=category1
+    """)
+
+    # Whitelist should override deny categories
+    self.assert_lookup("one.domain.com", ["1.1.1.1"])
+    self.assert_lookup("two.domain.com", ["1.2.3.4"])
+
+  def test_whitelisted_blacklist(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-whitelist=one.domain.com
+        rbl-blacklist=one.domain.com
+    """)
+
+    # Whitelist should override blacklist
+    self.assert_lookup("one.domain.com", ["1.1.1.1"])
 
 
 if __name__ == "__main__":
