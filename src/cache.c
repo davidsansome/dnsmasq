@@ -1225,32 +1225,22 @@ void log_query(unsigned int flags, char *name, struct all_addr *addr, char *arg)
     dest = "<CNAME>";
   else if (flags & F_RRNAME)
     dest = arg;
-    
+
+  if (flags & F_RBL_MASK)
+    source = "name";
+
   if ((flags & F_RBL_MASK) == F_RBL_BLACKLISTED)
-    {
-      source = "name";
-      dest = "blacklisted by rbl";
-    }
+    dest = "blacklisted by rbl";
   else if ((flags & F_RBL_MASK) == F_RBL_WHITELISTED)
-    {
-      source = "name";
-      dest = "whitelisted by rbl";
-    }
+    dest = "whitelisted by rbl";
   else if ((flags & F_RBL_MASK) == F_RBL_DENIED_CATEGORY)
-    {
-      source = "name";
-      dest = "in a denied rbl category";
-    }
+    dest = "in a denied rbl category";
   else if ((flags & F_RBL_MASK) == F_RBL_PERMITTED_CATEGORY)
-    {
-      source = "name";
-      dest = "in a permitted rbl category";
-    }
+    dest = "in a permitted rbl category";
   else if ((flags & F_RBL_MASK) == F_RBL_TOO_LONG)
-    {
-      source = "name";
-      dest = "too long for rbl TXT lookup";
-    }
+    dest = "too long for rbl TXT lookup";
+  else if ((flags & F_RBL_MASK) == F_RBL_UNCATEGORISED)
+    dest = "uncategorised";
   else if (flags & F_CONFIG)
     source = "config";
   else if (flags & F_DHCP)

@@ -120,15 +120,17 @@ int rbl_category_action(const unsigned char *categories, int *log_flag)
 int rbl_cached_category_action(char *txt_name, time_t now, int* log_flag)
 {
   struct crec *crecp = NULL;
+  int ret = RBL_ACTION_UNCAT;
 
   while ((crecp = cache_find_by_name(crecp, txt_name, now, F_TXT)))
     {
       int category = rbl_category_action(crecp->addr.txt.txt, log_flag);
       if (category != RBL_ACTION_UNKNOWN)
 	return category;
+      ret = RBL_ACTION_UNKNOWN;
     }
 
-  return RBL_ACTION_UNKNOWN;
+  return ret;
 }
 
 

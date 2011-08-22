@@ -319,6 +319,7 @@ struct crec {
 #define F_RBL_PERMITTED_CATEGORY (3u<<20)
 #define F_RBL_DENIED_CATEGORY    (4u<<20)
 #define F_RBL_TOO_LONG           (5u<<20)
+#define F_RBL_UNCATEGORISED      (6u<<20)
 
 
 /* struct sockaddr is not large enough to hold any address,
@@ -654,6 +655,7 @@ struct tftp_prefix {
 #define RBL_ACTION_PERMIT  1
 #define RBL_ACTION_DENY    2
 #define RBL_ACTION_LOOKUP  3
+#define RBL_ACTION_UNCAT   4
 
 #define RBL_MAX_CATCOUNT   32
 #define RBL_MAX_CATSIZE    1024 /* Leave 31 characters per category name */

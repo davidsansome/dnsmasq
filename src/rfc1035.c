@@ -1658,8 +1658,10 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 			  *rbl_action = rbl_cached_category_action(
 				rbl_txtname_buf, now, &log_flag);
 
-			  if (*rbl_action == RBL_ACTION_UNKNOWN)
+			  if (*rbl_action == RBL_ACTION_UNCAT)
 			    *rbl_action = RBL_ACTION_LOOKUP;
+			  else if (*rbl_action == RBL_ACTION_UNKNOWN)
+			    *rbl_action = RBL_ACTION_PERMIT;
 			}
 		    }
 
