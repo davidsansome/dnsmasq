@@ -671,9 +671,11 @@ struct rbl_domain_list {
   struct rbl_domain_list *next;
 };
 
+#define F_RBL_SELF 1
+
 struct rbl_target_list {
   struct all_addr addr;
-  int type; /* F_IPV4 or F_IPV6 */
+  int type; /* F_IPV4, F_IPV6 or F_RBL_SELF */
   struct rbl_target_list *next;
 };
 
@@ -824,7 +826,8 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *namebuff,
 		      unsigned long minimum_ttl);
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
 		   struct in_addr local_addr, struct in_addr local_netmask, time_t now,
-		   int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf);
+		   int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf,
+		   union mysockaddr *local_addr_all);
 int check_for_bogus_wildcard(struct dns_header *header, size_t qlen, char *name, 
 			     struct bogus_addr *addr, time_t now);
 unsigned char *find_pseudoheader(struct dns_header *header, size_t plen,
@@ -1029,4 +1032,5 @@ int rbl_category_action(const unsigned char *categories_original,
 			int *log_flag);
 int rbl_cached_category_action(char *txt_name, time_t now, int* log_flag);
 int rbl_txtname(const char *name, size_t buf_size, char *buf);
-int rbl_respond_denied(struct dns_header *header, size_t plen);
+int rbl_respond_denied(struct dns_header *header, size_t plen,
+		       const union mysockaddr *source);
