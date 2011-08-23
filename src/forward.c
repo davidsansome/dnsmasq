@@ -679,7 +679,8 @@ void reply_query(int fd, int family, time_t now)
 		  log_query(rbl_log_flag, txt_name, NULL, NULL);
 
 		  /* Send a denied response to the client. */
-		  if ((rsize = rbl_respond_denied(header, forward->rbl_response_size)))
+		  if ((rsize = rbl_respond_denied(header, forward->rbl_response_size,
+						  &forward->source)))
 		    {
 		      header->id = htons(forward->orig_id);
 		      header->hb4 |= HB4_RA;
@@ -724,7 +725,7 @@ void reply_query(int fd, int family, time_t now)
 				NULL, NULL);
 
 		      /* Send a denied response to the client. */
-		      if ((rsize = rbl_respond_denied(header, nn)))
+		      if ((rsize = rbl_respond_denied(header, nn, &forward->source)))
 			{
 			  nn = rsize;
 			}
@@ -748,6 +749,7 @@ void receive_query(struct listener *listen, time_t now)
   union mysockaddr source_addr;
   unsigned short type;
   struct all_addr dst_addr;
+  union mysockaddr my_dst_addr;
   struct in_addr netmask, dst_addr_4;
   size_t m;
   ssize_t n;
@@ -831,6 +833,8 @@ void receive_query(struct listener *listen, time_t now)
 	      } p;
 	      p.c = CMSG_DATA(cmptr);
 	      dst_addr_4 = dst_addr.addr.addr4 = p.p->ipi_spec_dst;
+	      my_dst_addr.sa.sa_family = AF_INET;
+	      my_dst_addr.in.sin_addr = p.p->ipi_spec_dst;
 	      if_index = p.p->ipi_ifindex;
 	    }
 #elif defined(IP_RECVDSTADDR) && defined(IP_RECVIF)
@@ -848,7 +852,11 @@ void receive_query(struct listener *listen, time_t now)
 	      } p;
 	       p.c = CMSG_DATA(cmptr);
 	       if (cmptr->cmsg_level == IPPROTO_IP && cmptr->cmsg_type == IP_RECVDSTADDR)
-		 dst_addr_4 = dst_addr.addr.addr4 = *(p.a);
+		 {
+		  dst_addr_4 = dst_addr.addr.addr4 = *(p.a);
+		  my_dst_addr.sa.sa_family = AF_INET;
+		  my_dst_addr.in.sin_addr.s_addr = *(p.a);
+		 }
 	       else if (cmptr->cmsg_level == IPPROTO_IP && cmptr->cmsg_type == IP_RECVIF)
 #ifdef HAVE_SOLARIS_NETWORK
 		 if_index = *(p.i);
@@ -872,6 +880,8 @@ void receive_query(struct listener *listen, time_t now)
 		p.c = CMSG_DATA(cmptr);
 		  
 		dst_addr.addr.addr6 = p.p->ipi6_addr;
+		my_dst_addr.sa.sa_family = AF_INET6;
+		my_dst_addr.in6.sin6_addr = p.p->ipi6_addr;
 		if_index = p.p->ipi6_ifindex;
 	      }
 	}
@@ -908,7 +918,8 @@ void receive_query(struct listener *listen, time_t now)
     }
 
   m = answer_request (header, ((char *) header) + PACKETSZ, (size_t)n, 
-		      dst_addr_4, netmask, now, &rbl_action, MAXDNAME, rbl_txtname);
+		      dst_addr_4, netmask, now, &rbl_action, MAXDNAME, rbl_txtname,
+		      &my_dst_addr);
   if (m >= 1)
     {
       send_from(listen->fd, option_bool(OPT_NOWILD), (char *)header, 
@@ -1025,7 +1036,7 @@ unsigned char *tcp_request(int confd, time_t now,
       
       /* m > 0 if answered from cache */
       m = answer_request(header, ((char *) header) + 65536, (unsigned int)size, 
-			 local_addr, netmask, now, NULL, 0, NULL);
+			 local_addr, netmask, now, NULL, 0, NULL, NULL);
 
       /* Do this by steam now we're not in the select() loop */
       check_log_writer(NULL); 

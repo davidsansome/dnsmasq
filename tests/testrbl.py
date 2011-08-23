@@ -281,6 +281,14 @@ class RblTest(unittest.TestCase):
     # Whitelist should override blacklist
     self.assert_lookup("one.domain.com", ["1.1.1.1"])
 
+  def test_target_self(self):
+    self.start("""
+        rbl-blocked-target=self
+        rbl-blacklist=badsite.com
+    """)
+
+    self.assert_lookup("badsite.com", ["127.0.0.1"])
+
 
 if __name__ == "__main__":
   unittest.main()

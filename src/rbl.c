@@ -163,13 +163,45 @@ int rbl_txtname(const char *name, size_t buf_size, char *buf)
 }
 
 
-int rbl_respond_denied(struct dns_header *header, size_t plen)
+static void add_block_targets(int qtype, struct dns_header *header,
+			      unsigned char **p, int *anscount,
+			      const union mysockaddr *source)
+{
+  int sa_family = qtype == T_A ? AF_INET : AF_INET6;
+  int rbl_type  = qtype == T_A ? F_IPV4  : F_IPV6;
+  char *format  = qtype == T_A ? "4"     : "6";
+
+  struct rbl_target_list *tgt;
+
+  for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
+    {
+      if (tgt->type == F_RBL_SELF && source->sa.sa_family == sa_family)
+	{
+	  add_resource_record(
+		header, NULL, NULL, sizeof(struct dns_header), p, daemon->local_ttl,
+		NULL, qtype, C_IN, format,
+		qtype == T_A ? (void*)&source->in.sin_addr : (void*)&source->in6.sin6_addr);
+	  *anscount += 1;
+	}
+      else if (tgt->type == rbl_type)
+	{
+	  add_resource_record(
+		header, NULL, NULL, sizeof(struct dns_header), p, daemon->local_ttl,
+		NULL, qtype, C_IN, format,
+		qtype == T_A ? (void*)&tgt->addr.addr.addr4 : (void*)&tgt->addr.addr.addr6);
+	  *anscount += 1;
+	}
+    }
+}
+
+
+int rbl_respond_denied(struct dns_header *header, size_t plen,
+		       const union mysockaddr *source)
 {
   int q;
   unsigned char *p = (unsigned char *)(header+1);
   unsigned short qtype = 0;
   int anscount = 0;
-  struct rbl_target_list *tgt;
 
   /* Like skip_questions but remembers the qtype. */
   for (q = ntohs(header->qdcount); q != 0; q--)
@@ -181,30 +213,12 @@ int rbl_respond_denied(struct dns_header *header, size_t plen)
     }
 
   /* Find suitable (A or AAAA) records to return instead of the real address. */
-  if (qtype == T_A)
-    for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
-      {
-	if (tgt->type != F_IPV4)
-	  continue;
-
-	add_resource_record(
-	      header, NULL, NULL, sizeof(struct dns_header), &p, daemon->local_ttl,
-	      NULL, qtype, C_IN, "4", &tgt->addr.addr.addr4);
-	anscount += 1;
-      }
 #ifdef HAVE_IPV6
-  else if (qtype == T_AAAA)
-    for (tgt = daemon->rbl_blocked_target ; tgt != NULL ; tgt = tgt->next)
-      {
-	if (tgt->type != F_IPV6)
-	  continue;
-
-	add_resource_record(
-	      header, NULL, NULL, sizeof(struct dns_header), &p, daemon->local_ttl,
-	      NULL, qtype, C_IN, "6", &tgt->addr.addr.addr6);
-	anscount += 1;
-      }
+  if (qtype == T_A || qtype == T_AAAA)
+#else
+  if (qtype == T_A)
 #endif
+    add_block_targets(qtype, header, &p, &anscount, source);
 
   /* done all questions, set up header and return length of result */
   /* clear authoritative and truncated flags, set QR flag */

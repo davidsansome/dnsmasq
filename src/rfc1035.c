@@ -1343,7 +1343,8 @@ static unsigned long crec_ttl(struct crec *crecp, time_t now)
 /* return zero if we can't answer from cache, or packet size if we can */
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
 		      struct in_addr local_addr, struct in_addr local_netmask, time_t now,
-		      int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf)
+		      int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf,
+		      union mysockaddr *local_addr_all)
 {
   char *name = daemon->namebuff;
   unsigned char *p, *ansp, *pheader;
@@ -1668,7 +1669,7 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		  else if (*rbl_action == RBL_ACTION_DENY)
 		    {
 		      log_query(flag | log_flag, name, NULL, NULL);
-		      return rbl_respond_denied(header, qlen);
+		      return rbl_respond_denied(header, qlen, local_addr_all);
 		    }
 		}
 

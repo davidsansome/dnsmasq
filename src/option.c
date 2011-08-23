@@ -2856,8 +2856,10 @@ static char *one_opt(int option, char *arg, char *gen_prob, int command_line)
       {
 	if (strcmp(arg, "self") == 0)
 	  {
-	    /* TODO */
-	    problem = _("'self' not supported yet for rbl-blocked-target");
+	    struct rbl_target_list *new = opt_malloc(sizeof(struct rbl_target_list));
+	    new->type = F_RBL_SELF;
+	    new->next = daemon->rbl_blocked_target;
+	    daemon->rbl_blocked_target = new;
 	  }
 	else
 	  {
