@@ -931,6 +931,7 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t
 		      #undef getstring
 
 		      cache_insert(txt.name, NULL, now, attl, flags | F_TXT | F_FORWARD, &txt);
+		      found = 1;
 		    }
 
 		  p1 = endrr;
@@ -938,6 +939,20 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t
 		    return 0; /* bad packet */
 		}
 	    }
+
+	  if (!found && !option_bool(OPT_NO_NEG))
+	   {
+	     if (!searched_soa)
+	       {
+		 searched_soa = 1;
+		 ttl = find_soa(header, qlen, NULL);
+	       }
+	     /* Set a default TTL and cache the NXDOMAIN response even if the
+		response didn't contain an authority entry. */
+	     if (!ttl)
+	       ttl = daemon->local_ttl ? daemon->local_ttl : 3600;
+	     cache_insert(name, &addr, now, ttl, flags | F_FORWARD | F_NEG | F_TXT, NULL);
+	   }
 	}
       else
 	{
@@ -1445,15 +1460,27 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		  if (!crecp)
 		    break;
 
-		  struct txt_record* txt = &crecp->addr.txt;
-		  if (add_resource_record(header, limit, &trunc, nameoffset, &ansp,
-					  crec_ttl(crecp, now), NULL,
-					  T_TXT, txt->class, "z", txt->txt))
+		  if (crecp->flags & F_NEG)
 		    {
 		      ans = 1;
-		      anscount++;
-		      log_query((crecp->flags & ~F_FORWARD) | F_RRNAME,
-				cache_get_name(crecp), NULL, (char*) txt->txt);
+		      auth = 0;
+		      if (crecp->flags & F_NXDOMAIN)
+			nxdomain = 1;
+		      if (!dryrun)
+			log_query(crecp->flags & ~F_FORWARD, name, &addr, NULL);
+		    }
+		  else
+		    {
+		      struct txt_record* txt = &crecp->addr.txt;
+		      if (add_resource_record(header, limit, &trunc, nameoffset, &ansp,
+					      crec_ttl(crecp, now), NULL,
+					      T_TXT, txt->class, "z", txt->txt))
+			{
+			  ans = 1;
+			  anscount++;
+			  log_query((crecp->flags & ~F_FORWARD) | F_RRNAME,
+				    cache_get_name(crecp), NULL, (char*) txt->txt);
+			}
 		    }
 		}
 	    }
