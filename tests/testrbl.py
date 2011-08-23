@@ -331,4 +331,5 @@ class RblTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
+  sys.argv.append("-v")
   unittest.main()
