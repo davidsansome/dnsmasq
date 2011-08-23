@@ -887,59 +887,59 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *name, time_t
 	    }
 	}
       else if (qtype == T_TXT)
-        {
-          if (!(flags & F_NXDOMAIN))
-            {
-              if (!(p1 = skip_questions(header, qlen)))
-                return 0;
+	{
+	  if (!(flags & F_NXDOMAIN))
+	    {
+	      if (!(p1 = skip_questions(header, qlen)))
+		return 0;
 
-              for (j = ntohs(header->ancount); j != 0; j--)
-                {
-                  if (!extract_name(header, qlen, &p1, name, 1, 0))
-                    return 0; /* bad packet */
+	      for (j = ntohs(header->ancount); j != 0; j--)
+		{
+		  if (!extract_name(header, qlen, &p1, name, 1, 0))
+		    return 0; /* bad packet */
 
-                  GETSHORT(aqtype, p1);
-                  GETSHORT(aqclass, p1);
-                  GETLONG(attl, p1);
-                  if ((daemon->max_ttl != 0) && (attl > daemon->max_ttl) && !is_sign)
-                    {
-                      (p1) -= 4;
-                      PUTLONG(daemon->max_ttl, p1);
-                    }
-                  GETSHORT(ardlen, p1);
-                  endrr = p1+ardlen;
+		  GETSHORT(aqtype, p1);
+		  GETSHORT(aqclass, p1);
+		  GETLONG(attl, p1);
+		  if ((daemon->max_ttl != 0) && (attl > daemon->max_ttl) && !is_sign)
+		    {
+		      (p1) -= 4;
+		      PUTLONG(daemon->max_ttl, p1);
+		    }
+		  GETSHORT(ardlen, p1);
+		  endrr = p1+ardlen;
 
 		  if (attl < minimum_ttl)
 		    attl = minimum_ttl;
 
-                  if (aqclass == C_IN && aqtype == T_TXT)
-                    {
-                      int len;
-                      struct txt_record txt;
-                      
-                      txt.len = ardlen;
-                      txt.class = aqclass;
-                      txt.name = strdup(name);
-                      
-                      #define getstring(dest) \
-                        len = *p1; \
-                        dest = malloc(len + 1); \
-                        memcpy(dest, p1+1, len); \
-                        dest[len] = '\0'; \
-                        p1 += len + 1;
+		  if (aqclass == C_IN && aqtype == T_TXT)
+		    {
+		      int len;
+		      struct txt_record txt;
 
-                      getstring(txt.txt);
-                      #undef getstring
+		      txt.len = ardlen;
+		      txt.class = aqclass;
+		      txt.name = strdup(name);
 
-                      cache_insert(txt.name, NULL, now, attl, flags | F_TXT | F_FORWARD, &txt);
-                    }
+		      #define getstring(dest) \
+			len = *p1; \
+			dest = malloc(len + 1); \
+			memcpy(dest, p1+1, len); \
+			dest[len] = '\0'; \
+			p1 += len + 1;
 
-                  p1 = endrr;
-                  if (!CHECK_LEN(header, p1, qlen, 0))
-                    return 0; /* bad packet */
-                }
-            }
-        }
+		      getstring(txt.txt);
+		      #undef getstring
+
+		      cache_insert(txt.name, NULL, now, attl, flags | F_TXT | F_FORWARD, &txt);
+		    }
+
+		  p1 = endrr;
+		  if (!CHECK_LEN(header, p1, qlen, 0))
+		    return 0; /* bad packet */
+		}
+	    }
+	}
       else
 	{
 	  /* everything other than PTR */
