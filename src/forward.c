@@ -949,25 +949,44 @@ void receive_query(struct listener *listen, time_t now)
 	  crc = questions_crc(daemon->rbl_txt_header, plen, daemon->namebuff);
 	  daemon->rbl_txt_header->id = get_id(crc);
 
-	  /* Send the TXT lookup */
-	  if (!forward_query(listen->fd, &source_addr, &dst_addr, if_index,
-			     daemon->rbl_txt_header, plen,
-			     now, &txt_frec))
+	  if (answer_request(daemon->rbl_txt_header, p, plen, dst_addr_4, netmask,
+			     now, &rbl_action, MAXDNAME, rbl_txtname, &my_dst_addr))
 	    {
-	      /* If the TXT lookup didn't send we want to discard the real reply
-		 when it arrives. */
-	      free_frec(forward);
+	      /* The TXT lookup was in the cache, so use it */
+	      rbl_action = rbl_cached_category_action(
+		    daemon->namebuff, now, NULL);
+
+	      if (rbl_action == RBL_ACTION_UNKNOWN)
+		rbl_action = RBL_ACTION_PERMIT;
+
+	      forward->flags |= FREC_RBL_REAL_QUERY;
+	      forward->rbl_response_size = rbl_action;
+	      forward->rbl_response_packet = strdup(daemon->namebuff);
+	      forward->rbl_other_crc = 0;
+	      forward->rbl_other_id = 0;
 	    }
 	  else
 	    {
-	      /* Link the real frec with the category frec. */
-	      txt_frec->flags |= FREC_RBL_CAT_QUERY;
-	      txt_frec->rbl_other_crc = forward->crc;
-	      txt_frec->rbl_other_id = forward->new_id;
-	      txt_frec->orig_id = forward->orig_id;
-	      forward->flags |= FREC_RBL_REAL_QUERY;
-	      forward->rbl_other_crc = txt_frec->crc;
-	      forward->rbl_other_id = txt_frec->new_id;
+	      /* Send the TXT lookup */
+	      if (!forward_query(listen->fd, &source_addr, &dst_addr, if_index,
+				 daemon->rbl_txt_header, plen,
+				 now, &txt_frec))
+		{
+		  /* If the TXT lookup didn't send we want to discard the real reply
+		     when it arrives. */
+		  free_frec(forward);
+		}
+	      else
+		{
+		  /* Link the real frec with the category frec. */
+		  txt_frec->flags |= FREC_RBL_CAT_QUERY;
+		  txt_frec->rbl_other_crc = forward->crc;
+		  txt_frec->rbl_other_id = forward->new_id;
+		  txt_frec->orig_id = forward->orig_id;
+		  forward->flags |= FREC_RBL_REAL_QUERY;
+		  forward->rbl_other_crc = txt_frec->crc;
+		  forward->rbl_other_id = txt_frec->new_id;
+		}
 	    }
 	}
     }

@@ -108,22 +108,26 @@ int rbl_category_action(const unsigned char *categories, int *log_flag)
     for (cat = categories_p ; *cat != NULL ; ++cat)
       if (strcmp(list->category_name, *cat) == 0)
 	{
-	  *log_flag = (list->action == RBL_ACTION_PERMIT) ?
-		F_RBL_PERMITTED_CATEGORY :
-		F_RBL_DENIED_CATEGORY;
+	  if (log_flag)
+	    *log_flag = (list->action == RBL_ACTION_PERMIT) ?
+		  F_RBL_PERMITTED_CATEGORY :
+		  F_RBL_DENIED_CATEGORY;
 	  return list->action;
 	}
 
   return RBL_ACTION_UNKNOWN;
 }
 
-int rbl_cached_category_action(char *txt_name, time_t now, int* log_flag)
+int rbl_cached_category_action(char *txt_name, time_t now, int *log_flag)
 {
   struct crec *crecp = NULL;
   int ret = RBL_ACTION_UNCAT;
 
   while ((crecp = cache_find_by_name(crecp, txt_name, now, F_TXT)))
     {
+      if (crecp->flags & F_NEG)
+	continue;
+
       int category = rbl_category_action(crecp->addr.txt.txt, log_flag);
       if (category != RBL_ACTION_UNKNOWN)
 	return category;

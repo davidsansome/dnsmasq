@@ -1,9 +1,11 @@
 import os
 import select
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -288,6 +290,44 @@ class RblTest(unittest.TestCase):
     """)
 
     self.assert_lookup("badsite.com", ["127.0.0.1"])
+
+  def test_txt_nxdomain_caching(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        server=/blocklist.com/127.0.0.1#5303
+    """)
+
+    # dnsmasq won't return authoritive NXDOMAINs for entries we set with
+    # --address, so start another DNS server written in python.
+    stop = False
+    def thread_main():
+      sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      sock.bind(("127.0.0.1", 5303))
+      sock.settimeout(0.1)
+      while not stop:
+        try:
+          (query, address) = sock.recvfrom(4096)
+        except socket.timeout:
+          pass
+        else:
+          if query:
+            # Same ID and questions section as the query but with nxdomain flags
+            response = query[0:2] + "\x81\x83" + query[4:]
+            sock.sendto(response, address)
+
+    thread = threading.Thread(target=thread_main)
+    thread.start()
+
+    try:
+      self.assert_lookup("one.domain.com", ["1.1.1.1"])
+      self.assert_log_contains("forwarded one.domain.com.blocklist.com to ")
+      self.assert_log_contains("reply one.domain.com.blocklist.com is NXDOMAIN", read=False)
+
+      self.assert_lookup("one.domain.com", ["1.1.1.1"])
+      self.assert_log_contains("cached one.domain.com.blocklist.com is NXDOMAIN")
+    finally:
+      stop = True
+      thread.join()
 
 
 if __name__ == "__main__":
