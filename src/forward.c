@@ -673,7 +673,7 @@ void reply_query(int fd, int family, time_t now)
 		  rbl_action = RBL_ACTION_UNKNOWN;
 
 		  other_frec->rbl_response_packet = whine_malloc(name_length + 1);
-		  memcpy(other_frec->rbl_response_packet, txt_name, name_length);
+		  memcpy(other_frec->rbl_response_packet, txt_name, name_length + 1);
 		}
 
 	      if (rbl_action == RBL_ACTION_PERMIT)
