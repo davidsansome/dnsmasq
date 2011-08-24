@@ -701,7 +701,6 @@ static unsigned char *do_doctor(unsigned char *p, int count, struct dns_header *
 		    p2++;
 		  }
 	      *p2 = 0;
-	      my_syslog(LOG_INFO, "reply %s is %s", name, p1);
 	      /* restore */
 	      memmove(p1 + 1, p1, len);
 	      *p1 = len;
@@ -1691,9 +1690,7 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 			}
 		    }
 
-		  if (*rbl_action == RBL_ACTION_PERMIT)
-		    log_query(flag | log_flag, name, NULL, NULL);
-		  else if (*rbl_action == RBL_ACTION_DENY)
+		  if (*rbl_action == RBL_ACTION_DENY)
 		    {
 		      log_query(flag | log_flag, name, NULL, NULL);
 		      return rbl_respond_denied(header, qlen, local_addr_all);
