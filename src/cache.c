@@ -370,7 +370,10 @@ struct crec *cache_insert(char *name, struct all_addr *addr,
   int freed_all = flags & F_REVERSE;
   int free_avail = 0;
 
-  log_query(flags | F_UPSTREAM, name, addr, NULL);
+  if ((flags & F_TXT) && (txt))
+    log_query(flags | F_UPSTREAM, name, addr, (char*)txt->txt);
+  else
+    log_query(flags | F_UPSTREAM, name, addr, NULL);
 
   /* if previous insertion failed give up now. */
   if (insert_error)
@@ -1224,6 +1227,8 @@ void log_query(unsigned int flags, char *name, struct all_addr *addr, char *arg)
   else if (flags & F_CNAME)
     dest = "<CNAME>";
   else if (flags & F_RRNAME)
+    dest = arg;
+  else if (flags & F_TXT)
     dest = arg;
 
   if (flags & F_RBL_MASK)
