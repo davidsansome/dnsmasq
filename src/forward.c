@@ -616,6 +616,15 @@ void reply_query(int fd, int family, time_t now)
 	  int rbl_action = RBL_ACTION_UNKNOWN;
 	  int rbl_log_flag = 0;
 
+	  union mysockaddr self_sockaddr;
+	  self_sockaddr.sa.sa_family = forward->source.sa.sa_family;
+	  if (forward->source.sa.sa_family == AF_INET)
+	    self_sockaddr.in.sin_addr = forward->dest.addr.addr4;
+#ifdef HAVE_IPV6
+	  else if (forward->source.sa.sa_family == AF_INET6)
+	    self_sockaddr.in6.sin6_addr = forward->dest.addr.addr6;
+#endif
+
 	  if (forward->flags & FREC_RBL_CAT_QUERY)
 	    {
 	      char txt_name[MAXDNAME + 1];
@@ -680,7 +689,7 @@ void reply_query(int fd, int family, time_t now)
 
 		  /* Send a denied response to the client. */
 		  if ((rsize = rbl_respond_denied(header, forward->rbl_response_size,
-						  &forward->source)))
+						  &self_sockaddr)))
 		    {
 		      header->id = htons(forward->orig_id);
 		      header->hb4 |= HB4_RA;
@@ -725,7 +734,7 @@ void reply_query(int fd, int family, time_t now)
 				NULL, NULL);
 
 		      /* Send a denied response to the client. */
-		      if ((rsize = rbl_respond_denied(header, nn, &forward->source)))
+		      if ((rsize = rbl_respond_denied(header, nn, &self_sockaddr)))
 			{
 			  nn = rsize;
 			}
