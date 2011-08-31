@@ -958,6 +958,13 @@ void receive_query(struct listener *listen, time_t now)
 	  unsigned int crc;
 
 	  /* Prepare a TXT lookup to get the domain's category */
+	  daemon->rbl_txt_header->hb3 = HB3_RD;
+	  daemon->rbl_txt_header->hb4 = 0;
+	  daemon->rbl_txt_header->qdcount = htons(1);
+	  daemon->rbl_txt_header->arcount = 0;
+	  daemon->rbl_txt_header->nscount = 0;
+	  daemon->rbl_txt_header->ancount = 0;
+
 	  p = daemon->rbl_txt_packet_p;
 	  p = (char*) do_rfc1035_name((unsigned char*)p, rbl_txtname);
 	  *(p++) = '\0';
