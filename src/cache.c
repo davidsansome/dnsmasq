@@ -463,6 +463,9 @@ struct crec *cache_insert(char *name, struct all_addr *addr,
   else
     *cache_get_name(new) = 0;
 
+  new->addr.txt.name = NULL;
+  new->addr.txt.txt = NULL;
+
   if (txt)
     new->addr.txt = *txt;
   else if (addr)
