@@ -562,13 +562,6 @@ int main (int argc, char **argv)
       daemon->rbl_txt_packet = safe_malloc(daemon->packet_buff_sz);
       daemon->rbl_txt_header = (struct dns_header *)daemon->rbl_txt_packet;
       daemon->rbl_txt_packet_p = daemon->rbl_txt_packet + sizeof(struct dns_header);
-
-      daemon->rbl_txt_header->hb3 = HB3_RD;
-      daemon->rbl_txt_header->hb4 = 0;
-      daemon->rbl_txt_header->qdcount = htons(1);
-      daemon->rbl_txt_header->arcount = 0;
-      daemon->rbl_txt_header->nscount = 0;
-      daemon->rbl_txt_header->ancount = 0;
     }
 
   /* finished start-up - release original process */
