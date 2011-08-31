@@ -667,7 +667,7 @@ void reply_query(int fd, int family, time_t now)
 		  memcpy(other_frec->rbl_response_packet, txt_name, name_length + 1);
 		}
 
-	      if (rbl_action == RBL_ACTION_PERMIT)
+	      if (rbl_action == RBL_ACTION_PERMIT && forward->rbl_response_packet)
 		{
 		  /* This domain is permitted. */
 		  struct dns_header *header = (struct dns_header *)forward->rbl_response_packet;
@@ -679,7 +679,7 @@ void reply_query(int fd, int family, time_t now)
 			    forward->rbl_response_size,
 			    &forward->source, &forward->dest, forward->iface);
 		}
-	      else if (rbl_action == RBL_ACTION_DENY)
+	      else if (rbl_action == RBL_ACTION_DENY && forward->rbl_response_packet)
 		{
 		  /* This domain is denied. */
 		  struct dns_header *header = (struct dns_header *)forward->rbl_response_packet;
@@ -724,7 +724,8 @@ void reply_query(int fd, int family, time_t now)
 		     be in the cache.  The TXT lookup also stored its action in
 		     our response size field. */
 
-		  if (forward->rbl_response_size == RBL_ACTION_DENY)
+		  if (forward->rbl_response_size == RBL_ACTION_DENY &&
+		      forward->rbl_response_packet)
 		    {
 		      /* This domain is denied. */
 		      struct dns_header *header = (struct dns_header *)daemon->packet;
@@ -1204,6 +1205,7 @@ static struct frec *allocate_frec(time_t now)
 #ifdef HAVE_IPV6
       f->rfd6 = NULL;
 #endif
+      f->rbl_response_size = 0;
       f->rbl_response_packet = NULL;
       daemon->frec_list = f;
     }
@@ -1265,6 +1267,7 @@ static void free_frec(struct frec *f)
 
   free(f->rbl_response_packet);
   f->rbl_response_packet = NULL;
+  f->rbl_response_size = 0;
 }
 
 /* if wait==NULL return a free or older than TIMEOUT record.
