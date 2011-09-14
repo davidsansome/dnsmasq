@@ -195,7 +195,7 @@ static void cache_free(struct crec *crecp)
       crecp->flags &= ~F_BIGNAME;
     }
 
-  if (crecp->flags & F_TXT)
+  if (crecp->flags & F_TXT && !(crecp->flags & F_NEG))
     {
       free_txt_record(&crecp->addr.txt);
     }
@@ -462,9 +462,6 @@ struct crec *cache_insert(char *name, struct all_addr *addr,
     strcpy(cache_get_name(new), name);
   else
     *cache_get_name(new) = 0;
-
-  new->addr.txt.name = NULL;
-  new->addr.txt.txt = NULL;
 
   if (txt)
     new->addr.txt = *txt;
