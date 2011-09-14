@@ -1669,7 +1669,12 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 		  int log_flag = 0;
 		  *rbl_action = rbl_domainlist_action(name, &log_flag);
 
-		  if (*rbl_action == RBL_ACTION_UNKNOWN)
+		  if (*rbl_action == RBL_ACTION_PERMIT)
+		    {
+		      /* The name is whitelisted - log that now. */
+		      log_query(flag | log_flag, name, NULL, NULL);
+		    }
+		  else if (*rbl_action == RBL_ACTION_UNKNOWN)
 		    {
 		      /* The name is neither whitelisted nor blacklisted - we
 			 need to look up the domain's category.  Check the
