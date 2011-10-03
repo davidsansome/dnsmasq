@@ -307,6 +307,7 @@ struct crec {
 #define F_NOERR     (1u<<12)
 #define F_CONFIG    (1u<<13)
 #define F_TXT       (1u<<14)
+#define F_TXTADDR   (1u<<15)
 /* below here are only valid as args to log_query: cache
    entries are limited to 16 bits */
 #define F_UPSTREAM  (1u<<16)
