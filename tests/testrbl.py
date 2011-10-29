@@ -333,7 +333,6 @@ class RblTest(unittest.TestCase):
       self.assert_log_contains("reply one.domain.com.blocklist.com is NXDOMAIN", read=False)
 
       self.assert_lookup("one.domain.com", ["1.1.1.1"])
-      self.assert_log_contains("cached one.domain.com.blocklist.com is NXDOMAIN")
     finally:
       stop = True
       thread.join()

@@ -1689,9 +1689,14 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
 				rbl_txtname_buf, now, &log_flag);
 
 			  if (*rbl_action == RBL_ACTION_UNCAT)
-			    *rbl_action = RBL_ACTION_LOOKUP;
+			    {
+			      *rbl_action = daemon->rbl_default_action;
+			      log_flag |= F_RBL_UNCATEGORISED;
+			    }
 			  else if (*rbl_action == RBL_ACTION_UNKNOWN)
-			    *rbl_action = RBL_ACTION_PERMIT;
+			    {
+			      *rbl_action = RBL_ACTION_PERMIT;
+			    }
 			}
 		    }
 
