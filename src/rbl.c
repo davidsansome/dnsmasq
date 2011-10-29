@@ -118,20 +118,29 @@ int rbl_category_action(const unsigned char *categories, int *log_flag)
   return RBL_ACTION_UNKNOWN;
 }
 
+/* Looks in the cache for the TXT record and returns a corresponding action:
+     RBL_ACTION_PERMIT  - permit
+     RBL_ACTION_DENY    - deny
+     RBL_ACTION_UNKNOWN - the category was found but was neither allowed or denied
+     RBL_ACTION_UNCAT   - negative cache record was found (uncategorised)
+     RBL_ACTION_LOOKUP  - no cache record was found
+*/
 int rbl_cached_category_action(char *txt_name, time_t now, int *log_flag)
 {
   struct crec *crecp = NULL;
-  int ret = RBL_ACTION_UNCAT;
+  int ret = RBL_ACTION_LOOKUP;
 
   while ((crecp = cache_find_by_name(crecp, txt_name, now, F_TXT)))
     {
       if (crecp->flags & F_NEG)
-	continue;
+	{
+	  ret = RBL_ACTION_UNCAT;
+	  continue;
+	}
 
-      int category = rbl_category_action(crecp->addr.txt.txt, log_flag);
-      if (category != RBL_ACTION_UNKNOWN)
-	return category;
-      ret = RBL_ACTION_UNKNOWN;
+      ret = rbl_category_action(crecp->addr.txt.txt, log_flag);
+      if (ret != RBL_ACTION_UNKNOWN)
+	break;
     }
 
   return ret;
