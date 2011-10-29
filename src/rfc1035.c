@@ -1358,7 +1358,7 @@ static unsigned long crec_ttl(struct crec *crecp, time_t now)
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
 		      struct in_addr local_addr, struct in_addr local_netmask, time_t now,
 		      int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf,
-		      union mysockaddr *local_addr_all)
+		      union mysockaddr *local_addr_all, int rbl_dryrun)
 {
   char *name = daemon->namebuff;
   unsigned char *p, *ansp, *pheader;
@@ -1905,6 +1905,12 @@ size_t answer_request(struct dns_header *header, char *limit, size_t qlen,
     {
       dryrun = 0;
       goto rerun;
+    }
+
+  if (*rbl_action == RBL_ACTION_LOOKUP && rbl_dryrun)
+    {
+      /* We found an answer to the query in the cache, but without an RBL record. */
+      return 1;
     }
   
   /* create an additional data section, for stuff in SRV and MX record replies. */

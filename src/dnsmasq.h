@@ -824,7 +824,7 @@ int extract_addresses(struct dns_header *header, size_t qlen, char *namebuff,
 size_t answer_request(struct dns_header *header, char *limit, size_t qlen,  
 		   struct in_addr local_addr, struct in_addr local_netmask, time_t now,
 		   int *rbl_action, int rbl_txtname_size, char *rbl_txtname_buf,
-		   union mysockaddr *local_addr_all);
+		   union mysockaddr *local_addr_all, int rbl_dryrun);
 int check_for_bogus_wildcard(struct dns_header *header, size_t qlen, char *name, 
 			     struct bogus_addr *addr, time_t now);
 unsigned char *find_pseudoheader(struct dns_header *header, size_t plen,
