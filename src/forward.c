@@ -435,7 +435,7 @@ static int forward_query(int udpfd, union mysockaddr *udpaddr,
   return 0;
 }
 
-static size_t process_reply(struct dns_header *header, time_t now, 
+static size_t process_reply(struct dns_header *header, time_t now,
 			    struct server *server, size_t n, int check_rebind, int checking_disabled,
 			    unsigned long minimum_ttl)
 {
@@ -794,6 +794,7 @@ void receive_query(struct listener *listen, time_t now)
   struct frec *forward = NULL;
   int rbl_action = RBL_ACTION_UNKNOWN;
   char rbl_txtname[MAXDNAME];
+  char *rbl_cached_response = NULL;
   
   /* packet buffer overwritten */
   daemon->srv_save = NULL;
@@ -938,74 +939,114 @@ void receive_query(struct listener *listen, time_t now)
 
   m = answer_request (header, ((char *) header) + PACKETSZ, (size_t)n, 
 		      dst_addr_4, netmask, now, &rbl_action, MAXDNAME, rbl_txtname,
-		      &my_dst_addr);
-  if (m >= 1)
+		      &my_dst_addr, 1);
+  if (m >= 1 && rbl_action != RBL_ACTION_LOOKUP)
     {
+      /* The response was found in the cache and we don't need to do an RBL
+	 lookup. */
       send_from(listen->fd, option_bool(OPT_NOWILD), (char *)header, 
 		m, &source_addr, &dst_addr, if_index);
       daemon->local_answer++;
+      return;
     }
-  else if (forward_query(listen->fd, &source_addr, &dst_addr, if_index,
-			 header, (size_t)n, now, &forward))
+  else if (m >= 1 && rbl_action == RBL_ACTION_LOOKUP)
     {
-      daemon->queries_forwarded++;
+      /* The response was found in the cache but we need to do an RBL lookup
+	 as well.  Do the cache lookup again but this time provide a different
+	 buffer to store the result in. */
+      rbl_cached_response = malloc(PACKETSZ);
+      memcpy(rbl_cached_response, header, PACKETSZ);
 
-      if (rbl_action == RBL_ACTION_LOOKUP)
+      rbl_action = RBL_ACTION_UNKNOWN;
+      m = answer_request (rbl_cached_response, ((char *) rbl_cached_response) + PACKETSZ,
+			  (size_t)n, dst_addr_4, netmask, now, &rbl_action, MAXDNAME,
+			  rbl_txtname, &my_dst_addr, 0);
+    }
+  else
+    {
+      /* The answer was not found in the cache - forward question to upstream. */
+      if (!forward_query(listen->fd, &source_addr, &dst_addr, if_index,
+			 header, (size_t)n, now, &forward))
 	{
-	  char *p;
-	  size_t plen;
-	  struct frec *txt_frec = NULL;
-	  unsigned int crc;
+	  daemon->local_answer ++;
+	  return;
+	}
+    }
 
-	  /* Prepare a TXT lookup to get the domain's category */
-	  daemon->rbl_txt_header->hb3 = HB3_RD;
-	  daemon->rbl_txt_header->hb4 = 0;
-	  daemon->rbl_txt_header->qdcount = htons(1);
-	  daemon->rbl_txt_header->arcount = 0;
-	  daemon->rbl_txt_header->nscount = 0;
-	  daemon->rbl_txt_header->ancount = 0;
+  daemon->queries_forwarded++;
 
-	  p = daemon->rbl_txt_packet_p;
-	  p = (char*) do_rfc1035_name((unsigned char*)p, rbl_txtname);
-	  *(p++) = '\0';
-	  PUTSHORT(T_TXT, p);
-	  PUTSHORT(C_IN, p);
+  if (rbl_action == RBL_ACTION_LOOKUP)
+    {
+      char *p;
+      size_t plen;
+      struct frec *txt_frec = NULL;
+      unsigned int crc;
 
-	  plen = p - daemon->rbl_txt_packet;
-	  crc = questions_crc(daemon->rbl_txt_header, plen, daemon->namebuff);
-	  daemon->rbl_txt_header->id = get_id(crc);
+      /* Prepare a TXT lookup to get the domain's category */
+      daemon->rbl_txt_header->hb3 = HB3_RD;
+      daemon->rbl_txt_header->hb4 = 0;
+      daemon->rbl_txt_header->qdcount = htons(1);
+      daemon->rbl_txt_header->arcount = 0;
+      daemon->rbl_txt_header->nscount = 0;
+      daemon->rbl_txt_header->ancount = 0;
 
-	  if (answer_request(daemon->rbl_txt_header, p, plen, dst_addr_4, netmask,
-			     now, &rbl_action, MAXDNAME, rbl_txtname, &my_dst_addr))
+      p = daemon->rbl_txt_packet_p;
+      p = (char*) do_rfc1035_name((unsigned char*)p, rbl_txtname);
+      *(p++) = '\0';
+      PUTSHORT(T_TXT, p);
+      PUTSHORT(C_IN, p);
+
+      plen = p - daemon->rbl_txt_packet;
+      crc = questions_crc(daemon->rbl_txt_header, plen, daemon->namebuff);
+      daemon->rbl_txt_header->id = get_id(crc);
+
+      if (answer_request(daemon->rbl_txt_header, p, plen, dst_addr_4, netmask,
+			 now, &rbl_action, MAXDNAME, rbl_txtname, &my_dst_addr, 0))
+	{
+	  /* The TXT lookup was in the cache, so use it */
+	  rbl_action = rbl_cached_category_action(
+		daemon->namebuff, now, NULL);
+
+	  if (rbl_action == RBL_ACTION_UNKNOWN)
+	    rbl_action = RBL_ACTION_PERMIT;
+
+	  if (rbl_cached_response)
+	    free(rbl_cached_response);
+	  else
 	    {
-	      /* The TXT lookup was in the cache, so use it */
-	      rbl_action = rbl_cached_category_action(
-		    daemon->namebuff, now, NULL);
-
-	      if (rbl_action == RBL_ACTION_UNKNOWN)
-		rbl_action = RBL_ACTION_PERMIT;
-
 	      forward->flags |= FREC_RBL_REAL_QUERY;
 	      forward->rbl_response_size = rbl_action;
 	      forward->rbl_response_packet = strdup(daemon->namebuff);
 	      forward->rbl_other_crc = 0;
 	      forward->rbl_other_id = 0;
 	    }
+	}
+      else
+	{
+	  /* Send the TXT lookup */
+	  if (!forward_query(listen->fd, &source_addr, &dst_addr, if_index,
+			     daemon->rbl_txt_header, plen,
+			     now, &txt_frec))
+	    {
+	      /* If the TXT lookup didn't send we want to discard the real reply
+		 when it arrives. */
+	      free_frec(forward);
+	      free(rbl_cached_response);
+	    }
 	  else
 	    {
-	      /* Send the TXT lookup */
-	      if (!forward_query(listen->fd, &source_addr, &dst_addr, if_index,
-				 daemon->rbl_txt_header, plen,
-				 now, &txt_frec))
+	      txt_frec->flags |= FREC_RBL_CAT_QUERY;
+	      if (rbl_cached_response)
 		{
-		  /* If the TXT lookup didn't send we want to discard the real reply
-		     when it arrives. */
-		  free_frec(forward);
+		  txt_frec->rbl_other_crc = 0;
+		  txt_frec->rbl_other_id = 0;
+		  txt_frec->orig_id = ntohs(header->id);
+		  txt_frec->rbl_response_packet = rbl_cached_response;
+		  txt_frec->rbl_response_size = m;
 		}
 	      else
 		{
 		  /* Link the real frec with the category frec. */
-		  txt_frec->flags |= FREC_RBL_CAT_QUERY;
 		  txt_frec->rbl_other_crc = forward->crc;
 		  txt_frec->rbl_other_id = forward->new_id;
 		  txt_frec->orig_id = forward->orig_id;
@@ -1016,8 +1057,6 @@ void receive_query(struct listener *listen, time_t now)
 	    }
 	}
     }
-  else
-    daemon->local_answer++;
 }
 
 /* The daemon forks before calling this: it should deal with one connection,
@@ -1086,7 +1125,7 @@ unsigned char *tcp_request(int confd, time_t now,
       
       /* m > 0 if answered from cache */
       m = answer_request(header, ((char *) header) + 65536, (unsigned int)size, 
-			 dst_addr_4, netmask, now, NULL, 0, NULL, NULL);
+			 dst_addr_4, netmask, now, NULL, 0, NULL, NULL, 0);
 
       /* Do this by steam now we're not in the select() loop */
       check_log_writer(NULL); 
