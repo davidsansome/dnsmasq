@@ -9,25 +9,23 @@ import threading
 import time
 import unittest
 
-BASE_CONFIG = """
-port=5301
+SHARED_CONFIG = """
 no-daemon
 log-queries
 
 no-resolv
 no-hosts
+"""
+
+BASE_CONFIG = SHARED_CONFIG + """
+port=5301
 
 server=127.0.0.1#5302
 rbl-suffix=blocklist.com
 """
 
-UPSTREAM_CONFIG = """
+UPSTREAM_CONFIG = SHARED_CONFIG + """
 port=5302
-no-daemon
-log-queries
-
-no-resolv
-no-hosts
 
 address=/goodsite.com/1.1.1.1
 address=/goodsite2.com/2.2.2.2
@@ -53,6 +51,10 @@ mx-host=badsite.com,mail.badsite.com
 mx-host=one.domain.com,mail.domain.com
 """
 
+SECOND_UPSTREAM_CONFIG = SHARED_CONFIG + """
+port=5303
+"""
+
 
 class RblTest(unittest.TestCase):
   def setUp(self):
@@ -64,17 +66,24 @@ class RblTest(unittest.TestCase):
       process.terminate()
       process.wait()
 
-  def start(self, config):
+  def start(self, config, extra_upstream_config="", second_upstream_config=None):
     self.config_file = tempfile.NamedTemporaryFile()
     self.config_file.write(BASE_CONFIG + config)
     self.config_file.flush()
 
     self.upstream_config_file = tempfile.NamedTemporaryFile()
-    self.upstream_config_file.write(UPSTREAM_CONFIG)
+    self.upstream_config_file.write(UPSTREAM_CONFIG + extra_upstream_config)
     self.upstream_config_file.flush()
 
     self.start_server(self.upstream_config_file.name)
     self.process = self.start_server(self.config_file.name)
+
+    if second_upstream_config is not None:
+      self.upstream2_config_file = tempfile.NamedTemporaryFile()
+      self.upstream2_config_file.write(SECOND_UPSTREAM_CONFIG + second_upstream_config)
+      self.upstream2_config_file.flush()
+
+      self.start_server(self.upstream2_config_file.name)
 
   def start_server(self, config_file):
     dnsmasq_path = os.path.join(os.path.dirname(__file__), "../src/dnsmasq")
@@ -328,6 +337,27 @@ class RblTest(unittest.TestCase):
     finally:
       stop = True
       thread.join()
+
+  def test_short_rbl_ttl(self):
+    self.start("""
+        rbl-blocked-target=1.2.3.4
+        rbl-deny-category=category1
+        server=127.0.0.1#5303
+    """, """
+        local-ttl=2
+        txt-record=short_ttl.domain.com.blocklist.com,category1
+    """, """
+        local-ttl=60
+        address=/short_ttl.domain.com/1.1.1.1
+    """)
+    
+    self.assert_lookup("short_ttl.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name short_ttl.domain.com is in a denied rbl category")
+
+    time.sleep(3)
+
+    self.assert_lookup("short_ttl.domain.com", ["1.2.3.4"])
+    self.assert_log_contains("name short_ttl.domain.com is in a denied rbl category")
 
 
 if __name__ == "__main__":
