@@ -962,7 +962,8 @@ void receive_query(struct listener *listen, time_t now)
       memcpy(rbl_cached_response, header, PACKETSZ);
 
       rbl_action = RBL_ACTION_UNKNOWN;
-      m = answer_request (rbl_cached_response, ((char *) rbl_cached_response) + PACKETSZ,
+      m = answer_request ((struct dns_header*) rbl_cached_response,
+			  ((char *) rbl_cached_response) + PACKETSZ,
 			  (size_t)n, dst_addr_4, netmask, now, &rbl_action, MAXDNAME,
 			  rbl_txtname, &my_dst_addr, 0);
     }
